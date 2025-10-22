@@ -164,4 +164,39 @@ pip install transformers --no-deps
 
 Nota: usar `--no-deps` evita la instalación automática de dependencias. Si necesitas algunas dependencias concretas de `transformers` (por ejemplo `torch`, `tokenizers`, `huggingface-hub`, `safetensors`, etc.), añádelas explícitamente en `requirements.txt` o instálalas manualmente después.
 
+Tesseract-OCR (Windows)
+
+- `pytesseract` es solo un wrapper en Python; necesitás tener el programa Tesseract-OCR instalado en tu sistema para que `pytesseract` funcione.
+
+Instalar Tesseract-OCR en Windows:
+
+1. Descargá el instalador desde:
+   https://github.com/UB-Mannheim/tesseract/wiki
+   (buscá el archivo .exe, por ejemplo `tesseract-ocr-w64-setup-5.x.x.exe`).
+
+2. Durante la instalación:
+   - Activá la opción “Add Tesseract to the system path” para poder usar `tesseract` desde cualquier terminal.
+
+3. Verificá que funcione ejecutando en una terminal nueva:
+
+```
+tesseract --version
+```
+
+4. Si no activaste “Add to PATH” durante la instalación, agregá la ruta manualmente en las Variables de entorno de Windows:
+   - Panel de control → Sistema → Configuración avanzada del sistema → Variables de entorno
+   - En Variables del sistema, editá `Path` y agregá la ruta de instalación, por ejemplo:
+
+```
+C:\Program Files\Tesseract-OCR\
+```
+
+5. Guardá los cambios, cerrá ventanas abiertas y abrí una nueva terminal. Verificá nuevamente con:
+
+```
+tesseract --version
+```
+
+De esta forma, Tesseract quedará disponible globalmente y `pytesseract` podrá invocar el ejecutable sin configuraciones adicionales en el código.
+
 ---
