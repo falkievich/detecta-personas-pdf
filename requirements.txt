@@ -1,0 +1,9 @@
+fastapi
+uvicorn # Útil para Correr el Backend
+PyMuPDF
+rapidfuzz
+python-multipart
+pytest
+
+# OCR / procesamiento de imágenes
+pytesseract

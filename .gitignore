@@ -1,0 +1,11 @@
+env/
+.env
+/.venv
+/test
+pytest.ini
+/.vscode
+/__pycache__
+/funcs/__pycache__
+/funcs/normalizacion/__pycache__
+/resultados_del_escaneo
+/routes/__pycache__
