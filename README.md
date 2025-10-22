@@ -1,54 +1,167 @@
-# Fuzzy PDF Matcher
+# PDF Matcher
 
-Este programa ofrece dos funcionalidades principales, 1. Permite la extracción y comparación de información de documentos PDF mediante el uso de la lógica difusa. 2. Permite la detección automática de datos pertenecientes a personas y organizaciones.
-
----
-
-## 1. Búsqueda fuzzy de términos en PDF
-
-- **Descripción**  
-  Mediante una API, puedes enviar un `.pdf` y un archivo de datos (`.json` o `.txt`) que contenga los valores que quieres buscar, por ejemplo:  
-  ```json
-  { "nombre_apellido": "thiago" }
-
-- **Cómo funciona** 
-  1. Se extraen del PDF los textos candidatos.
-
-  2. Se compara cada candidato contra el valor objetivo usando lógica difusa (triangular membership functions: baja, media, alta, exacta).
-
-  3. Se realiza inferencia y defuzzificación (centro de gravedad) para obtener un “valor crisp” de similitud.
-
-  4. Se devuelven las palabras o conjuntos de palabras del PDF que más se parecen a los valores del .json/.txt.
-
----
-## 2. Detección automática de datos de personas y organizaciones
-  Este módulo se encarga de extraer y clasificar información de identificación tanto de personas físicas como de organizaciones (personas juridicas) en un texto o PDF. Se divide en dos etapas principales:
-
-* **Normalización del texto**  
-* **Búsqueda y agrupación de patrones de identificación**
+Este proyecto ofrece dos funcionalidades complementarias para extraer y comparar datos en documentos PDF desde un backend, sin utilizar modelos de lenguaje (LLM). Ambas funciones están disponibles a través de endpoints HTTP (ver sección de API).
 
 ---
 
-### 2.1 Normalización de texto de PDF
+## Función 1 — Detectar Personas en un PDF
 
-- **Archivo**: `extraer_texto_pdf.py`  
-- **Qué hace**:  
-  1. Abre y recorre todas las páginas de un PDF con PyMuPDF (`fitz`).  
-  2. Concatena el texto extraído y elimina saltos de línea, retornos de carro y espacios múltiples.  
-  3. En la versión avanzada, además unifica sinónimos (`Documento` → `DNI`, variantes de “D.N.I.” → `DNI`, “M.P.” → `MATRICULA`), quita prefijos como `N°` delante de números y elimina separadores de miles.  
-  4. Devuelve una sola línea de texto limpia, lista para el siguiente paso.
+**Descripción**
+
+- Permite subir un PDF al endpoint dedicado y, únicamente mediante procesamiento en backend (sin llamadas a modelos externos ni LLM), detectar y extraer:
+  - Nombres y apellidos de personas físicas
+  - Identificadores asociados: DNI, CUIL, CUIT, CUIF y Matrícula
+
+**Cómo se usa (endpoint)**
+
+- Endpoint principal: `POST /upload_files`
+  - Campo `pdf_file`: archivo PDF (requerido)
+  - Campo `data_file`: archivo opcional (`.json` o `.txt`) para la función de comparación (ver Función 2)
+
+**Qué hace el backend para detectar personas**
+
+1. **Normalización del texto extraído del PDF**:
+   - Se extrae el texto página por página (PyMuPDF / fitz).
+   - Se limpia el texto: eliminación de saltos de línea innecesarios, múltiples espacios y caracteres de separación.
+   - Se aplican reglas simples de normalización: unificación de variantes (por ejemplo, "D.N.I." → "DNI"), eliminación de prefijos tipo `N°`, y limpieza de separadores de miles en números.
+
+2. **Búsqueda basada en reglas y expresiones regulares**:
+   - Se usan patrones regex para localizar etiquetas e identificadores (DNI, CUIL, CUIT, CUIF, Matrícula) y sus valores numéricos.
+   - Para cada identificador encontrado, se toma una ventana de contexto anterior para intentar extraer el nombre asociado (1–3 palabras para personas físicas, ventanas más amplias para nombres jurídicos si hace falta).
+
+3. **Agrupación y refinamiento**:
+   - Se agrupan coincidencias por nombre e identificador para consolidar múltiples apariciones.
+   - Se aplican heurísticas para fusionar entradas muy parecidas y evitar duplicados o fragmentaciones.
+
+**Formato de salida (ejemplo)**
+
+Al invocar `/upload_files` con solo el `pdf_file`, la respuesta JSON contendrá (ejemplo simplificado):
+
+```json
+{
+  "comparison_performed": false,
+  "comparison_result": null,
+  "personas_identificadas_pdf": [
+    {
+      "nombre": "Juan Pérez",
+      "identificadores": {
+        "DNI": "12345678",
+        "CUIL": null,
+        "MATRICULA": null
+      }
+    },
+    ...
+  ]
+}
+```
+
+**Notas importantes**
+
+- Este módulo no depende de modelos de lenguaje; la extracción se basa en normalización, regex y reglas heurísticas.
+- Se prioriza la precisión en la extracción de identificadores numéricos y la asociación al nombre más probable en su ventana de contexto.
 
 ---
 
-### 2.2 Detección de personas físicas y organizaciones
+## Función 2 — Comparar PDF con `.json` / `.txt`
 
-- **Archivo**: `detectar_personas_pdf.py`  
-- **Qué hace**:  
-  1. Llama a la función de normalización avanzada para obtener el texto limpio (desde un PDF o texto plano).  
-  2. Define patrones regex para cada etiqueta de identificación (`DNI`, `MATRICULA`, `CUIF`, `CUIT`, `CUIL`).  
-  3. Busca números asociados a esas etiquetas y extrae el nombre previo usando ventanas de contexto y patrones de nombre “natural” (1–3 palabras) o “jurídico” (hasta 7 palabras con puntos y &).  
-  4. Agrupa coincidencias por nombre y etiqueta, refina los casos de solo CUIT usando el patrón jurídico, y fusiona entradas muy parecidas para evitar duplicados.  
-  5. Devuelve una lista de resultados en formato  
-     ```
-     Nombre Apellido | DNI N° xxx | CUIT N° yyy | …
-     ``` 
+**Descripción**
+
+- Al mismo endpoint `POST /upload_files` puedes adjuntar opcionalmente un archivo de datos (`.json` o `.txt`) junto con el PDF.
+- El sistema extrae la información del PDF (como en la Función 1) y compara los valores provistos en el `.json/.txt` con los valores extraídos del PDF.
+- Para cada par valor objetivo (del .json/.txt) vs candidato (del PDF), se calcula una puntuación de similitud y se clasifica en una de 4 categorías: `exacta`, `alta`, `media`, `baja`.
+
+**Entrada esperada (ejemplo JSON)**
+
+```json
+{
+  "nombre_apellido": "Juan Perez",
+  "DNI": "12345678",
+  "CUIT": "20-12345678-1"
+}
+```
+
+**Cómo se realiza la comparación**
+
+1. **Normalización previa**:
+   - Ambos lados (valor objetivo y candidatos extraídos) se normalizan: minúsculas, eliminación de tildes y caracteres no significativos, limpieza de espacios y formato de números.
+
+2. **Estrategias de comparación según tipo de dato**:
+   - Identificadores numéricos (DNI, CUIL, CUIT, CUIF, Matrícula): se prioriza la comparación numérica/exacta y formatos equivalentes (puntos, guiones ignorados). Coincidencias exactamente iguales reciben la puntuación más alta.
+   - Textos (nombres): se usan métricas de similitud de cadenas (p. ej. ratio de edición/token-similarity). También se consideran coincidencias parciales y orden de tokens.
+
+3. **Cálculo de la puntuación y mapeo a categorías**
+
+- Se obtiene una puntuación normalizada en rango 0–100.
+- Umbrales por defecto (configurables):
+  - exacta: >= 90
+  - alta: 70–89
+  - media: 40–69
+  - baja: < 40
+
+**Salida del comparador (ejemplo)**
+
+Al enviar `data_file` junto al `pdf_file`, la respuesta incluirá `comparison_performed: true` y un objeto `comparison_result` con una lista de comparaciones:
+
+```json
+{
+  "comparison_performed": true,
+  "comparison_result": [
+    {
+      "field": "nombre_apellido",
+      "value_from_file": "Juan Perez",
+      "best_match_in_pdf": "Juan Pérez",
+      "score": 95,
+      "category": "exacta"
+    },
+    {
+      "field": "DNI",
+      "value_from_file": "12345678",
+      "best_match_in_pdf": "12345678",
+      "score": 100,
+      "category": "exacta"
+    },
+    {
+      "field": "CUIT",
+      "value_from_file": "20-12345678-1",
+      "best_match_in_pdf": "20123456781",
+      "score": 85,
+      "category": "alta"
+    }
+  ],
+  "personas_identificadas_pdf": [ ... ]
+}
+```
+
+**Explicación práctica**
+
+- Para cada campo del `.json/.txt` el servicio devuelve cuál es el mejor candidato encontrado en el PDF, la puntuación (0–100) y la categoría de coincidencia.
+- Esto permite automatizar verificaciones (ej. validar que el DNI del documento coincide con la base de datos) y obtener una confianza cuantificada sobre cada coincidencia.
+
+---
+
+## API y uso rápido
+
+- `POST /upload_files` (principal)
+  - Form data:
+    - `pdf_file` (file, requerido): PDF a analizar
+    - `data_file` (file, opcional): `.json` o `.txt` con los valores a comparar
+  - Respuesta: JSON con `personas_identificadas_pdf` y, si se suministró `data_file`, `comparison_result`.
+
+- `POST /detect_phrase` (auxiliar)
+  - Body JSON: `{ "text": "<frase o párrafo>" }`
+  - Útil para detectar nombre + identificador dentro de un texto sin subir un PDF.
+
+---
+
+## Consideraciones finales
+
+- **Privacidad**: todo el procesamiento se realiza en el servidor que ejecuta la aplicación; no se envía contenido a servicios externos por defecto.
+- **Reproducibilidad**: se recomienda fijar versiones en `requirements.txt` para entornos de producción. Después de instalar las dependencias listadas con `pip install -r requirements.txt`, si en algún momento decides instalar `transformers` y quieres evitar que pip descargue e instale todas las dependencias adicionales de ese paquete, instálalo manualmente con:
+
+```
+pip install transformers --no-deps
+```
+
+Nota: usar `--no-deps` evita la instalación automática de dependencias. Si necesitas algunas dependencias concretas de `transformers` (por ejemplo `torch`, `tokenizers`, `huggingface-hub`, `safetensors`, etc.), añádelas explícitamente en `requirements.txt` o instálalas manualmente después.
+
+---

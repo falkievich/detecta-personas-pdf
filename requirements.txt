@@ -1,9 +1,25 @@
+# Backend
 fastapi
-uvicorn # Útil para Correr el Backend
-PyMuPDF
+uvicorn
+
+# PDF / Texto
+PyMuPDF  # Se utiliza Fitz
 rapidfuzz
 python-multipart
-pytest
 
 # OCR / procesamiento de imágenes
 pytesseract
+pdf2image       # Requiere Poppler instalado en el SO
+pillow          # Dependencia de pdf2image y pytesseract
+
+# NLP / NER (solo dependencias mínimas, sin transformers)
+torch
+huggingface-hub
+tokenizers
+safetensors
+tqdm
+regex
+requests
+
+# Nota: si decides instalar transformers más tarde y quieres evitar dependencias extra:
+# pip install transformers --no-deps
