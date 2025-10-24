@@ -20,6 +20,7 @@ safetensors
 tqdm
 regex
 requests
+numpy
 
 # Nota: si decides instalar transformers más tarde y quieres evitar dependencias extra:
 # pip install transformers --no-deps

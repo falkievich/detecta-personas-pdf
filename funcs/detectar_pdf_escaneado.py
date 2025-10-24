@@ -92,34 +92,34 @@ def detectar_scnan(path_pdf: str) -> Tuple[str, Optional[str]]:
     if not texto_ocr.strip():
         raise RuntimeError("No se pudo extraer texto mediante OCR.")
 
-    # Paso 3: (opcional) extraer entidades con NER
-    print("[INFO] Ejecutando NER sobre el texto extraído...")
-    entities = extract_entities(texto_ocr)
+    # # Paso 3: (opcional) extraer entidades con NER
+    # print("[INFO] Ejecutando NER sobre el texto extraído...")
+    # entities = extract_entities(texto_ocr)
 
-    # Guardar resultados para inspección manual (opcional)
-    output_dir = "resultados_del_escaneo"
-    os.makedirs(output_dir, exist_ok=True)
+    # # Guardar resultados para inspección manual (opcional)
+    # output_dir = "resultados_del_escaneo"
+    # os.makedirs(output_dir, exist_ok=True)
 
-    ocr_file = os.path.join(output_dir, "resultado_ocr.txt")
-    ents_file = os.path.join(output_dir, "entidades_extraidas.txt")
+    # ocr_file = os.path.join(output_dir, "resultado_ocr.txt")
+    # ents_file = os.path.join(output_dir, "entidades_extraidas.txt")
 
-    # Si ya existen, eliminarlos antes de crear nuevos
-    for file_path in (ocr_file, ents_file):
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                print(f"[INFO] Archivo anterior eliminado: {file_path}")
-            except Exception as e:
-                print(f"[WARN] No se pudo eliminar {file_path}: {e}")
+    # # Si ya existen, eliminarlos antes de crear nuevos
+    # for file_path in (ocr_file, ents_file):
+    #     if os.path.exists(file_path):
+    #         try:
+    #             os.remove(file_path)
+    #             print(f"[INFO] Archivo anterior eliminado: {file_path}")
+    #         except Exception as e:
+    #             print(f"[WARN] No se pudo eliminar {file_path}: {e}")
 
-    # Guardar nuevo OCR
-    with open(ocr_file, "w", encoding="utf-8") as f:
-        f.write(texto_ocr)
+    # # Guardar nuevo OCR
+    # with open(ocr_file, "w", encoding="utf-8") as f:
+    #     f.write(texto_ocr)
 
-    # Guardar nuevas entidades
-    with open(ents_file, "w", encoding="utf-8") as f:
-        for e in entities:
-            f.write(f"{e['word']} - {e['entity_group']}\n")
+    # # Guardar nuevas entidades
+    # with open(ents_file, "w", encoding="utf-8") as f:
+    #     for e in entities:
+    #         f.write(f"{e['word']} - {e['entity_group']}\n")
 
     leyenda = "El PDF está compuesto por imágenes escaneadas. Se aplicó OCR con Tesseract y NER en español."
     return leyenda, texto_ocr

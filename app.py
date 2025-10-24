@@ -8,3 +8,7 @@ app = FastAPI(title="API: Detección de Personas en PDF y Comparador con JSON/TX
 
 # Router de nuestro endpoint
 app.include_router(compare_router, prefix="/api")
+
+@app.get("/")
+def read_root():
+    return {"Hello": "World"}
