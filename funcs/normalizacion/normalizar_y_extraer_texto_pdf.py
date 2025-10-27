@@ -3,8 +3,6 @@ Abre un archivo PDF, extrae todo su texto concatenado y luego lo normaliza al el
 """
 import fitz  # PyMuPDF se usa en vez de PyPDF2 para extraer texto de PDF
 import re, unicodedata
-from funcs.detectar_pdf_escaneado import detectar_scnan
-from funcs.normalizacion.normalizacion_pdf_escaneado import normalizacion_ocr_pdf
 
 # Extración de texto de un PDF + normalización simple
 def normalizacion_simple_pdf(path_pdf='ley.pdf'):
@@ -121,28 +119,3 @@ def normalizacion_avanzada_pdf(path_pdf: str = None, raw_text: str = None) -> st
     texto = re.sub(r'\s+', ' ', texto).strip()
 
     return texto
-
-# Detectar si un PDF es escaneado o no
-def detectar_pdf_escaneado(path_pdf: str):
-    """
-    Detecta si el PDF está escaneado y extrae la información del mismo.
-    Devuelve (leyenda, texto_normalizado)
-    """
-    # Llamamos a la función OCR externa
-    leyenda, texto_ocr = detectar_scnan(path_pdf=path_pdf) # texto_ocr texto obtenido del escaneo
-
-    print(f"[INFO] {leyenda}")
-
-    # Si el PDF tiene texto embebido, seguimos con flujo normal
-    if "no contiene imágenes escaneadas" in leyenda:
-        texto_normalizado = normalizacion_avanzada_pdf(path_pdf=path_pdf)
-
-    # Si el PDF es escaneado, usamos el texto obtenido
-    elif "está compuesto por imágenes escaneadas" in leyenda and texto_ocr:
-        texto_normalizado = normalizacion_avanzada_pdf(raw_text=texto_ocr) # Realizamos la Normalización Estandar
-        texto_normalizado = normalizacion_ocr_pdf(texto_normalizado) # Realizamos una Normalización Extra para PDF´S Escaneados
-
-    else:
-        raise RuntimeError("No se pudo determinar el tipo de PDF o extraer texto correctamente.")
-
-    return leyenda, texto_normalizado

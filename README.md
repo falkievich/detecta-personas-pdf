@@ -159,18 +159,17 @@ http://localhost:8000/docs
 
 ## Construcción con Docker y BuildKit
 
-Este proyecto usa Docker con BuildKit habilitado para optimizar tiempos de build y mantener imágenes más limpias. Este permite:
+Este proyecto usa Docker con BuildKit habilitado para optimizar tiempos de build y mantener imágenes más limpias. Esto permite:
 
 - Ejecución paralela de pasos independientes.
-- Cachés persistentes para `apt`, `pip` y Hugging Face mediante `--mount=type=cache`, evitando descargas repetidas entre builds.
+- Cachés persistentes para `pip` mediante `--mount=type=cache`, evitando descargas repetidas entre builds.
 - Montajes temporales que no se copian a la imagen final, reduciendo el tamaño de la imagen resultante.
 - Soporte para reintentos y timeouts en descargas, lo que hace los builds más estables en redes inestables o con restricciones.
 
-El Dockerfile está diseñado por capas para maximizar el uso del caché:
-1. Dependencias del sistema (Tesseract, Poppler, etc.)
-2. Dependencias de Python (con caché de pip)
-3. Descarga del modelo NER de Hugging Face (cacheable)
-4. Código de la aplicación y exposición del puerto 8000
+Está organizado para maximizar el uso del caché y mantener la imagen lo más ligera posible:
+
+1. Dependencias de Python (instaladas desde `requirements.txt`).
+2. Código de la aplicación (se copia al final para evitar invalidar la cache de dependencias cuando solo cambia el código).
 
 Pasos para construir y desplegar:
 

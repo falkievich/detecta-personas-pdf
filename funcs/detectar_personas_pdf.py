@@ -1,6 +1,6 @@
 import re
 from collections import defaultdict
-from funcs.normalizacion.normalizar_y_extraer_texto_pdf import normalizacion_avanzada_pdf, detectar_pdf_escaneado
+from funcs.normalizacion.normalizar_y_extraer_texto_pdf import normalizacion_avanzada_pdf
 
 def detectar_personas_dni_matricula(path_pdf: str = None, raw_text: str = None):
     """
@@ -12,7 +12,7 @@ def detectar_personas_dni_matricula(path_pdf: str = None, raw_text: str = None):
     if raw_text is not None:
         texto = normalizacion_avanzada_pdf(raw_text=raw_text)
     elif path_pdf:
-        _, texto = detectar_pdf_escaneado(path_pdf=path_pdf)
+        texto = normalizacion_avanzada_pdf(path_pdf=path_pdf)
     else:
         raise ValueError("Se debe pasar path_pdf o raw_text")
     
