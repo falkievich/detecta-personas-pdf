@@ -27,7 +27,7 @@ Este proyecto ofrece dos funcionalidades complementarias para extraer y comparar
 
 2. **Búsqueda basada en reglas y expresiones regulares**:
    - Se usan patrones regex para localizar etiquetas e identificadores (DNI, CUIL, CUIT, CUIF, Matrícula) y sus valores numéricos.
-   - Para cada identificador encontrado, se toma una ventana de contexto anterior para intentar extraer el nombre asociado (1–3 palabras para personas físicas, ventanas más amplias para nombres jurídicos si hace falta).
+   - Para cada identificador encontrado, se toma una ventana de contexto anterior para intentar extraer el nombre asociado (1–5 palabras para personas físicas, ventanas más amplias para nombres jurídicos si hace falta).
 
 3. **Agrupación y refinamiento**:
    - Se agrupan coincidencias por nombre e identificador para consolidar múltiples apariciones.
@@ -57,7 +57,6 @@ Al invocar `/upload_files` con solo el `pdf_file`, la respuesta JSON contendrá 
 
 **Notas importantes**
 
-- Este módulo no depende de modelos de lenguaje; la extracción se basa en normalización, regex y reglas heurísticas.
 - Se prioriza la precisión en la extracción de identificadores numéricos y la asociación al nombre más probable en su ventana de contexto.
 
 ---
