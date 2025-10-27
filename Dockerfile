@@ -8,7 +8,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # ====================
-# CAPA 1: Dependencias del sistema (SE CACHEA - rara vez cambia)
+# CAPA 1: Dependencias del sistema (SE CACHEA)
 # ====================
 # Usar cache mount para apt y agregar reintentos para manejar problemas de red/certificados
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     pip install --retries 10 --timeout 120 transformers --no-deps
 
 # ====================
-# CAPA 3: Pre-descarga del modelo de Hugging Face (OPCIONAL pero recomendado)
+# CAPA 3: Pre-descarga del modelo de Hugging Face
 # ====================
 # Descargar el modelo NER durante el build para evitar descargarlo en cada deploy
 # Usa cache mount para Hugging Face (persiste modelos descargados entre builds)
