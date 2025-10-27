@@ -151,52 +151,46 @@ Al enviar `data_file` junto al `pdf_file`, la respuesta incluirá `comparison_pe
   - Body JSON: `{ "text": "<frase o párrafo>" }`
   - Útil para detectar nombre + identificador dentro de un texto sin subir un PDF.
 
+Nota: los endpoints están implementados con FastAPI. Al desplegar la aplicación con Docker (o ejecutar localmente con Uvicorn), FastAPI genera documentación automática accesible en:
+
+```
+http://localhost:8000/docs
+```
 ---
 
-## Consideraciones finales
+## Construcción con Docker y BuildKit
+
+Este proyecto usa Docker con BuildKit habilitado para optimizar tiempos de build y mantener imágenes más limpias. Este permite:
+
+- Ejecución paralela de pasos independientes.
+- Cachés persistentes para `apt`, `pip` y Hugging Face mediante `--mount=type=cache`, evitando descargas repetidas entre builds.
+- Montajes temporales que no se copian a la imagen final, reduciendo el tamaño de la imagen resultante.
+- Soporte para reintentos y timeouts en descargas, lo que hace los builds más estables en redes inestables o con restricciones.
+
+El Dockerfile está diseñado por capas para maximizar el uso del caché:
+1. Dependencias del sistema (Tesseract, Poppler, etc.)
+2. Dependencias de Python (con caché de pip)
+3. Descarga del modelo NER de Hugging Face (cacheable)
+4. Código de la aplicación y exposición del puerto 8000
+
+Pasos para construir y desplegar:
+
+1) Reconstruir la imagen:
+
+   .\build.ps1
+
+2) Levantar el contenedor con la imagen ya construida:
+
+   docker-compose up -d
+
+3) Acceder a la API:
+
+   http://127.0.0.1:8000
+
+Notas rápidas:
+- Si un paso de instalación falla por certificados o red, vuelve a ejecutar `.\build.ps1`; gracias a los caches, lo ya descargado o instalado no se volverá a bajar.
+- Si solo cambias código (no `requirements.txt` ni dependencias del sistema), no es necesario reconstruir la imagen: basta con `docker-compose up -d` para levantar el servicio.
+
+
 
 - **Privacidad**: todo el procesamiento se realiza en el servidor que ejecuta la aplicación; no se envía contenido a servicios externos por defecto.
-- **Reproducibilidad**: se recomienda fijar versiones en `requirements.txt` para entornos de producción. Después de instalar las dependencias listadas con `pip install -r requirements.txt`, si en algún momento decides instalar `transformers` y quieres evitar que pip descargue e instale todas las dependencias adicionales de ese paquete, instálalo manualmente con:
-
-```
-pip install transformers --no-deps
-```
-
-Nota: usar `--no-deps` evita la instalación automática de dependencias. Si necesitas algunas dependencias concretas de `transformers` (por ejemplo `torch`, `tokenizers`, `huggingface-hub`, `safetensors`, etc.), añádelas explícitamente en `requirements.txt` o instálalas manualmente después.
-
-Tesseract-OCR (Windows)
-
-- `pytesseract` es solo un wrapper en Python; necesitás tener el programa Tesseract-OCR instalado en tu sistema para que `pytesseract` funcione.
-
-Instalar Tesseract-OCR en Windows:
-
-1. Descargá el instalador desde:
-   https://github.com/UB-Mannheim/tesseract/wiki
-   (buscá el archivo .exe, por ejemplo `tesseract-ocr-w64-setup-5.x.x.exe`).
-
-2. Durante la instalación:
-   - Activá la opción “Add Tesseract to the system path” para poder usar `tesseract` desde cualquier terminal.
-
-3. Verificá que funcione ejecutando en una terminal nueva:
-
-```
-tesseract --version
-```
-
-4. Si no activaste “Add to PATH” durante la instalación, agregá la ruta manualmente en las Variables de entorno de Windows:
-   - Panel de control → Sistema → Configuración avanzada del sistema → Variables de entorno
-   - En Variables del sistema, editá `Path` y agregá la ruta de instalación, por ejemplo:
-
-```
-C:\Program Files\Tesseract-OCR\
-```
-
-5. Guardá los cambios, cerrá ventanas abiertas y abrí una nueva terminal. Verificá nuevamente con:
-
-```
-tesseract --version
-```
-
-De esta forma, Tesseract quedará disponible globalmente y `pytesseract` podrá invocar el ejecutable sin configuraciones adicionales en el código.
-
----
