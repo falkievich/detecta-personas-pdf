@@ -12,6 +12,7 @@ import os
 from typing import Tuple, Optional
 from pdf2image import convert_from_path
 import pytesseract
+import fitz  # PyMuPDF
 from transformers import pipeline
 
 
@@ -30,7 +31,7 @@ def _es_pdf_escaneado(path_pdf: str, umbral_texto: int = 100) -> bool:
     - Convierte las primeras páginas a texto con PyMuPDF y evalúa si hay texto embebido.
     - Si el texto embebido es escaso, se asume que es escaneado.
     """
-    import fitz  # PyMuPDF
+    
     with fitz.open(path_pdf) as doc:
         total_chars = sum(len(page.get_text("text") or "") for page in doc)
     return total_chars < umbral_texto
