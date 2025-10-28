@@ -24,8 +24,8 @@ def comparar_valores_json_pdf(json_path: str, pdf_path: str):
     # Normalizar para comparación (sin separadores en números)
     texto_pdf_comparacion = normalizar_para_comparacion(texto_pdf_original)
     
-    print("texto pdf para mostrar: ", texto_pdf_original, "\n")
-    print("\n\ntexto pdf para comparar: ", texto_pdf_comparacion)
+    #print("texto pdf para mostrar: ", texto_pdf_original, "\n")
+    #print("\n\ntexto pdf para comparar: ", texto_pdf_comparacion)
 
 
     words_original = texto_pdf_original.split()

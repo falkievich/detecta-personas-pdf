@@ -1,5 +1,5 @@
 """
-Módulo auxiliar para el manejo y validación de archivos PDF y datos.
+Módulo de Servicio para el manejo y validación de archivos PDF y datos.
 Contiene funciones para:
 - Validar archivos PDF
 - Guardar archivos temporales

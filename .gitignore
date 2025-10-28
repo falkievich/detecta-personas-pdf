@@ -9,3 +9,4 @@ pytest.ini
 /funcs/normalizacion/__pycache__
 /resultados_del_escaneo
 /routes/__pycache__
+/service/__pycache__

@@ -6,7 +6,7 @@ devuelve los resultados estructurados en JSON.
 from fastapi import APIRouter, UploadFile, File, HTTPException, Body
 from fastapi.responses import JSONResponse
 
-from funcs.pdf_file_handler import procesar_pdf_y_comparar
+from service.pdf_file_handler import procesar_pdf_y_comparar
 from funcs.detectar_personas_pdf import detectar_personas_dni_matricula
 
 #---------------------------------------------------------- Router
