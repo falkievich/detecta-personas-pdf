@@ -99,6 +99,18 @@ def normalizar_para_comparacion(texto: str) -> str:
     texto = texto.replace('\n', ' ').replace('\r', ' ')
     texto = re.sub(r'\s+', ' ', texto).strip()
 
+    # Eliminar puntos entre letras (ej: d.n.i → dni)
+    texto = re.sub(r'(?<=[a-zA-Z])\.(?=[a-zA-Z])', '', texto)
+    
+    # Eliminar corchetes, paréntesis y otros caracteres de puntuación comunes
+    texto = re.sub(r'[\[\]\(\)\{\}]', ' ', texto)
+    
+    # Eliminar comas, punto y coma al final de palabras
+    texto = re.sub(r'[,;](?=\s|$)', '', texto)
+    
+    # Colapsar espacios múltiples que puedan haber quedado
+    texto = re.sub(r'\s+', ' ', texto).strip()
+
     # Eliminar puntos, guiones, barras y espacios entre dígitos (separadores de miles)
     texto = re.sub(r'(?<=\d)[.\-/\s]+(?=\d)', '', texto)
 

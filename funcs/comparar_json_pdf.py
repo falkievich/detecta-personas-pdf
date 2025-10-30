@@ -11,8 +11,9 @@ from funcs.comparar_palabras import compare_text_preciso  # comparador robusto d
 from funcs.etiquetas import label_from_score  # umbrales/etiquetado
 from funcs.normalizacion.normalizacion_txt_json import normalizar_para_comparacion
 
-# Regex para extraer números con separadores (puntos o guiones)
-NUM_REGEX = re.compile(r"\b\d{1,3}(?:[.\-]\d{1,3})*\b")
+# Regex para extraer números (con o sin separadores)
+# Acepta números de 1+ dígitos, opcionalmente con separadores de miles/puntos/guiones
+NUM_REGEX = re.compile(r"\b\d+(?:[.\-]\d+)*\b")
 
 def comparar_valores_json_pdf(json_path: str, pdf_path: str):
     json_data = extraer_valores_txt(json_path)
@@ -20,7 +21,7 @@ def comparar_valores_json_pdf(json_path: str, pdf_path: str):
         return {"exacta": [], "alta": [], "media": [], "baja": []}
 
     # Extraer texto original del PDF (para mostrar)
-    texto_pdf_original = normalizacion_simple_pdf(pdf_path)
+    texto_pdf_original = normalizacion_simple_pdf(pdf_path) # Eliminar en UN futuro
     # Normalizar para comparación (sin separadores en números)
     texto_pdf_comparacion = normalizar_para_comparacion(texto_pdf_original)
     
@@ -61,54 +62,67 @@ def comparar_valores_json_pdf(json_path: str, pdf_path: str):
 
             best_score, best = 0.0, None
 
-            # 1) Detectar numérico vs texto
-            if NUM_REGEX.fullmatch(val_str):
-                # --------- Comparación de NUMÉRICOS (insensible a separadores) ----------
-                # Extraer todos los números del PDF original
-                candidates = NUM_REGEX.findall(texto_pdf_original)
+            # 1) Detectar si es puramente numérico (solo dígitos y separadores)
+            # Si tiene letras (como "DNI-123"), se trata como TEXTO
+            es_solo_numerico = bool(re.match(r'^[\d\.\-\s]+$', val_str.strip()))
+            
+            if es_solo_numerico:
+                # --------- Comparación de NUMÉRICOS PUROS (insensible a separadores) ----------
+                # Busca números en el PDF normalizado (sin separadores)
+                candidates = NUM_REGEX.findall(texto_pdf_comparacion)
                 
                 # Limpiar el valor JSON (solo dígitos)
                 clean_json = re.sub(r"\D", "", val_str_comparacion)
                 
+                local_best = -1.0
+                local_best_span = None
+                
                 if candidates:
-                    local_best = -1.0
-                    local_best_tok = None
-                    
                     for tok in candidates:
                         # Limpiar el candidato del PDF (solo dígitos)
                         clean_tok = re.sub(r"\D", "", tok)
                         
-                        # Atajo: exacto en dígitos => 100
+                        # Comparar SOLO los dígitos
                         if clean_json == clean_tok:
-                            local_best = 100.0
-                            local_best_tok = tok
-                            break
+                            sc = 100.0
+                        else:
+                            sc = fuzz.ratio(clean_json, clean_tok)
                         
-                        sc = fuzz.ratio(clean_json, clean_tok)
                         if sc > local_best:
                             local_best = sc
-                            local_best_tok = tok
-                    
-                    best_score = float(local_best if local_best >= 0 else 0.0)
-                    best = local_best_tok
-                else:
-                    best_score, best = 0.0, None
+                            local_best_span = tok
+                        if local_best == 100.0:
+                            break
+                
+                best_score = float(local_best if local_best >= 0 else 0.0)
+                best = local_best_span
 
             else:
                 # --------- Comparación de TEXTO (normaliza acentos, tokens, overlap) ----
-                best_score, best = compare_text_preciso(val_str, texto_pdf_original)
+                # Pasar texto_pdf_comparacion (normalizado) para comparar
+                # y texto_pdf_original para extraer el span a mostrar
+                best_score, best = compare_text_preciso(val_str, texto_pdf_comparacion, texto_pdf_original)
 
                 # Fallback opcional: si no hay candidato, probá n-grama plano simple
                 if best is None:
                     n = max(1, len(val_str_comparacion.split()))
                     json_norm = val_str_comparacion.lower()
+                    json_norm_len = len(json_norm)
+                    min_len_required = int(json_norm_len * 0.7)  # Al menos 70% de la longitud
+                    
                     local_best = -1.0
                     local_best_span = None
                     local_best_idx = -1
                     
                     for i in range(0, len(words_comparacion) - n + 1):
                         cand = ' '.join(words_comparacion[i:i+n])
-                        sc = fuzz.ratio(json_norm, cand.lower())
+                        cand_lower = cand.lower()
+                        
+                        # FILTRO: Solo comparar si el candidato tiene longitud similar
+                        if len(cand_lower) < min_len_required:
+                            continue
+                        
+                        sc = fuzz.ratio(json_norm, cand_lower)
                         if sc > local_best:
                             local_best = sc
                             local_best_idx = i
