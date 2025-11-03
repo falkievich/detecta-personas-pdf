@@ -6,3 +6,4 @@ uvicorn
 PyMuPDF  # Se utiliza Fitz
 rapidfuzz
 python-multipart
+filetype # Validación de archivos

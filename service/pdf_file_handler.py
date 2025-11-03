@@ -14,30 +14,7 @@ from fastapi import UploadFile, HTTPException
 
 from funcs.comparar_json_pdf import comparar_valores_json_pdf
 from funcs.detectar_personas_pdf import detectar_personas_dni_matricula
-
-
-def validar_archivo_pdf(pdf_file: UploadFile | None) -> None:
-    """
-    Valida que el archivo PDF esté presente y tenga extensión .pdf
-    
-    Args:
-        pdf_file: Archivo PDF subido
-        
-    Raises:
-        HTTPException: Si el archivo no es válido o no está presente
-    """
-    # Comprobación explícita cuando no se sube ningún archivo PDF
-    if pdf_file is None or not getattr(pdf_file, "filename", None):
-        raise HTTPException(
-            status_code=400, 
-            detail="Falta subir un PDF en el campo 'pdf_file'. Este endpoint requiere un archivo PDF."
-        )
-
-    if not pdf_file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=400, 
-            detail="El archivo de PDF debe tener extensión .pdf"
-        )
+from service.file_validators import validar_archivo_completo
 
 
 def detectar_pdf_escaneado(path_pdf: str, umbral_texto: int = 100) -> bool:
@@ -83,7 +60,8 @@ async def guardar_archivos_temporales(
     data_file: Optional[UploadFile] = None
 ) -> Tuple[str, Optional[str]]:
     """
-    Guarda los archivos subidos en ubicaciones temporales.
+    Guarda los archivos subidos en ubicaciones temporales después de validarlos.
+    Aplica validación completa en múltiples capas (extensión, MIME cliente, MIME real, magic bytes).
     
     Args:
         pdf_file: Archivo PDF (requerido)
@@ -93,28 +71,40 @@ async def guardar_archivos_temporales(
         Tupla con (ruta_pdf_temporal, ruta_data_temporal_o_None)
         
     Raises:
-        HTTPException: Si hay errores al guardar los archivos
+        HTTPException: Si hay errores al guardar los archivos o las validaciones fallan
     """
     tmp_data_name = None
     tmp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     
     try:
-        # Guardar PDF (siempre requerido)
-        tmp_pdf.write(await pdf_file.read())
+        # Validar y leer PDF con todas las capas de seguridad
+        pdf_content = await validar_archivo_completo(pdf_file, 'pdf')
+        
+        # Guardar PDF
+        tmp_pdf.write(pdf_content)
         tmp_pdf.close()
 
         # Si se proporcionó data_file, validar y guardarlo
         if data_file is not None:
             ext_data = os.path.splitext(data_file.filename)[1].lower()
-            if ext_data not in (".json", ".txt"):
+            
+            # Determinar el tipo esperado según la extensión
+            if ext_data == '.json':
+                expected_type = 'json'
+            elif ext_data == '.txt':
+                expected_type = 'txt'
+            else:
                 raise HTTPException(
                     status_code=400,
                     detail="El archivo de datos debe ser .json o .txt"
                 )
+            
+            # Validar y leer archivo de datos con todas las capas de seguridad
+            data_content = await validar_archivo_completo(data_file, expected_type)
 
             tmp_data = tempfile.NamedTemporaryFile(delete=False, suffix=ext_data)
             try:
-                tmp_data.write(await data_file.read())
+                tmp_data.write(data_content)
                 tmp_data.close()
                 tmp_data_name = tmp_data.name
             except Exception as e:
@@ -177,8 +167,8 @@ async def procesar_pdf_y_comparar(
     Función principal que procesa el PDF y opcionalmente compara con datos externos.
     
     Flujo de procesamiento:
-    1. Valida que el archivo PDF sea válido
-    2. Guarda archivos temporales
+    1. Valida presencia básica del archivo PDF
+    2. Guarda archivos temporales (con validación completa)
     3. Verifica que el PDF no esté escaneado
     4. Detecta personas con DNI/matrícula en el PDF
     5. Si se proporcionó data_file, compara los datos
@@ -197,14 +187,18 @@ async def procesar_pdf_y_comparar(
     Raises:
         HTTPException: Si hay errores en el procesamiento
     """
-    # 1. Validar archivo PDF
-    validar_archivo_pdf(pdf_file)
+    # 1. Validación básica de presencia del archivo
+    if pdf_file is None or not getattr(pdf_file, "filename", None):
+        raise HTTPException(
+            status_code=400, 
+            detail="Falta subir un PDF en el campo 'pdf_file'. Este endpoint requiere un archivo PDF."
+        )
     
     tmp_pdf_path = None
     tmp_data_path = None
     
     try:
-        # 2. Guardar archivos temporales
+        # 2. Guardar archivos temporales (incluye validación completa)
         tmp_pdf_path, tmp_data_path = await guardar_archivos_temporales(pdf_file, data_file)
         
         # 3. Verificar que el PDF no esté escaneado
