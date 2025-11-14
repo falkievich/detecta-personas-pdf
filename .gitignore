@@ -10,3 +10,5 @@ pytest.ini
 /resultados_del_escaneo
 /routes/__pycache__
 /service/__pycache__
+/archivos_spacy
+/funcs/nlp_extractors/__pycache__

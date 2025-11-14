@@ -78,6 +78,9 @@ def compare_text_preciso(target: str, full_text: str, full_text_original: str = 
             if target_norm == cand_norm:
                 sc = 100.0
 
+            # DEBUG: Imprimir comparaciones con score > 70
+            # if sc > 70 and has_long_number:
+                # print(f"  [DEBUG] Comparando '{target}' vs '{cand_original}' → score: {sc:.2f}")
 
             if sc > best_score:
                 best_score = sc
