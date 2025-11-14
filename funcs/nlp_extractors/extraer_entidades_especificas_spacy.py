@@ -37,8 +37,7 @@ except Exception:
     _VIS_DISPONIBLE = False
 
 from funcs.normalizacion.normalizar_y_extraer_texto_pdf import (
-    normalizacion_avanzada_pdf,
-    extraer_texto_crudo_pdf
+    normalizacion_avanzada_pdf
 )
 from funcs.nlp_extractors.constantes import PATRONES_DOCUMENTOS, STOP_WORDS, ANCLAS_CONTEXTUALES
 from funcs.nlp_extractors.validadores_entidades import (
@@ -111,15 +110,14 @@ def extraer_entidades_especificas(
         entidades_solicitadas.remove("nombres")
     
     # ========== SEPARACIÓN DE TEXTOS ==========
-    # 1) Texto CRUDO para spaCy NER (conserva estructura, acentos, mayúsculas)
-    print("[DEBUG] Extrayendo texto CRUDO del PDF...")
-    texto_crudo = extraer_texto_crudo_pdf(path_pdf=path_pdf)
-    print(f"[DEBUG] Texto CRUDO extraído: {len(texto_crudo)} caracteres")
-    
-    # 2) Texto NORMALIZADO para documentos (DNI, CUIT, etc.)
-    print("[DEBUG] Extrayendo texto NORMALIZADO del PDF...")
+    # Extraer texto NORMALIZADO para todo el flujo (no se usa extraer_texto_crudo_pdf)
+    # Usamos el texto normalizado tanto para la extracción de documentos como
+    # para el procesamiento con spaCy (si corresponde).
+    print("[DEBUG] Extrayendo texto NORMALIZADO del PDF (usado para todo)...")
     texto_normalizado = normalizacion_avanzada_pdf(path_pdf=path_pdf)
     print(f"[DEBUG] Texto NORMALIZADO extraído: {len(texto_normalizado)} caracteres")
+    # Reutilizar texto_normalizado como texto_crudo para spaCy
+    texto_crudo = texto_normalizado
 
     # Procesar con spaCy SOLO si se necesitan nombres o si la visualización está activa
     # Si 'visualizar' es None, usamos la configuración global de visualization_displacy
@@ -173,16 +171,21 @@ def extraer_entidades_especificas(
         debe_visualizar = _VIS_DISPONIBLE and is_visualization_enabled()
     
     if debe_visualizar and doc is not None:
-        print("[DEBUG] Generando visualización con displaCy...")
-        vis_result = render_and_maybe_save(
-            doc,
-            style=vis_style,
-            options=vis_options,
-            serve=vis_serve,
-            save=vis_save,
-            save_dir=vis_save_dir,
-        )
-        resultado["_visualization"] = vis_result
+        # Generar visualización pero NO incluir el HTML ni rutas en la respuesta API
+        print("[DEBUG] Generando visualización con displaCy (no incluida en la respuesta)...")
+        try:
+            # Llamamos al render y guardado si corresponde, pero descartamos el resultado
+            _ = render_and_maybe_save(
+                doc,
+                style=vis_style,
+                options=vis_options,
+                serve=vis_serve,
+                save=vis_save,
+                save_dir=vis_save_dir,
+            )
+        except Exception as e:
+            # No queremos que un fallo de visualización afecte la respuesta principal
+            print(f"[DEBUG] Error al generar visualización (se ignorará): {e}")
 
     return resultado
 

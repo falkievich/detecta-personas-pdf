@@ -91,23 +91,11 @@ async def extract_entities_from_pdf(
             "resultados": resultado,
         }
 
-        # Incluir información de visualización guardada si existe
-        vis_info = None
-        if isinstance(resultado, dict):
-            vis = resultado.get('_visualization')
-            if vis and isinstance(vis, dict):
-                saved = vis.get('saved')
-                if saved:
-                    # saved contiene 'path', 'filename', 'url_file' y opcional 'svg_base64'
-                    vis_info = {
-                        'path': saved.get('path'),
-                        'filename': saved.get('filename'),
-                        'file_url': saved.get('url_file'),
-                    }
-                    if 'svg_base64' in saved:
-                        vis_info['svg_base64'] = saved.get('svg_base64')
-        if vis_info:
-            response['visualization'] = vis_info
+        # NO incluir información de visualización en la respuesta API.
+        # La visualización se puede generar y/o guardar localmente según la
+        # configuración en funcs.nlp_extractors.visualization_displacy, pero
+        # no exponemos HTML ni rutas de archivos en la API por motivos de
+        # seguridad/privacidad.
 
         # Resumen: contar solo listas de entidades (ignorar keys no-lista como _visualization)
         resumen = {}
@@ -115,7 +103,6 @@ async def extract_entities_from_pdf(
             if isinstance(items, list):
                 resumen[tipo] = len(items)
         response['resumen'] = resumen
-        
         return JSONResponse(content=response, status_code=200)
         
     except HTTPException:
