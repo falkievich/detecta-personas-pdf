@@ -4,6 +4,43 @@ Abre un archivo PDF, extrae todo su texto concatenado y luego lo normaliza al el
 import fitz  # PyMuPDF se usa en vez de PyPDF2 para extraer texto de PDF
 import re, unicodedata
 
+
+def extraer_texto_crudo_pdf(path_pdf: str) -> str:
+    """
+    Extrae texto crudo del PDF SIN normalización agresiva.
+    Preserva acentos, mayúsculas, puntuación y estructura original.
+    Uso: Para spaCy NER (detección de entidades PERSON).
+    
+    Solo aplica limpieza mínima:
+    - Convierte saltos de línea a espacios
+    - Colapsa espacios múltiples
+    - Normaliza Unicode (NFKC) para caracteres especiales
+    
+    NO realiza:
+    - Reemplazos de etiquetas (Documento → DNI)
+    - Eliminación de puntos/comas
+    - Modificación de estructura del texto
+    """
+    texto = ''
+    with fitz.open(path_pdf) as doc:
+        for pagina in doc:
+            texto += pagina.get_text()
+    
+    # Normalización Unicode ligera (solo para caracteres especiales)
+    try:
+        texto = unicodedata.normalize("NFKC", texto)
+    except Exception:
+        pass
+    
+    # Convertir saltos de línea a espacios (mínimo necesario)
+    texto = texto.replace('\n', ' ').replace('\r', ' ')
+    
+    # Colapsar espacios múltiples
+    texto = re.sub(r'\s+', ' ', texto).strip()
+    
+    return texto
+
+
 # Extración de texto de un PDF + normalización simple
 def normalizacion_simple_pdf(path_pdf='ley.pdf'):
     texto = ''

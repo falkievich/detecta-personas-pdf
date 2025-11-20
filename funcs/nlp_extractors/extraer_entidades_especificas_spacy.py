@@ -1,9 +1,37 @@
 """
 Módulo para extraer entidades específicas de un PDF usando spaCy.
 Permite seleccionar qué tipo de entidades se desean extraer:
-- Nombres (personas) - Enfoque híbrido: Regex + spaCy NER
-  * Captura nombres completos incluso con puntuación intermedia
-  * Usa STOP_WORDS como anclas contextuales (no las elimina del nombre)
+- Nombres (personas) - Enfoque híbrido MEJORADO en 5 fases:
+  * Fase 1: Regex - Captura patrones de nombres (mayúsculas/mixtos)
+  * Fase 2: spaCy NER - Valida con entidades PER/PERSON
+  * Fase 3: Reglas Contextuales - Sistema extensible de 6 reglas:
+    1. ANCLAS_CONTEXTUALES: Detecta cerca de palabras-c    # Procesar coincidencias de reglas contextuales
+    for match in matches_contextuales:
+        # Usar nombre_original si está disponible (preserva formato judicial con coma)
+        # De lo contrario, unir tokens normalmente
+        if "nombre_original" in match:
+            nombre_raw = match["nombre_original"]
+            nombre_limpio = nombre_raw  # Preservar tal cual (ej: "CARBALLO, MARTA")
+        else:
+            nombre_raw = " ".join(match["name_tokens"])
+            nombre_limpio = nombre_raw.title()
+        
+        # Verificar si ya fue agregado
+        if nombre_limpio.lower() in nombres_unicos:
+            print(f"  ⚠️  '{nombre_raw}' (regla: {match.get('rule', 'unknown')}, ancla: {match['anchor']}) ya detectado previamente")
+            continue
+        
+        # Agregar nombre detectado por regla contextual
+        nombres_unicos.add(nombre_limpio.lower())
+        
+        print(f"  ✅ '{nombre_raw}' detectado por {match.get('rule', 'REGLA_DESCONOCIDA')}")ni, etc.)
+    2. NOMBRE_DESPUES_DE_CONTRA: Detecta después de "contra"
+    3. PATRON_C_S: Detecta entre "C/" y "S/" (expedientes judiciales)
+    4. APELLIDO_NOMBRE_JUDICIAL: Detecta formato Title Case (Apellido Nombre)
+    5. NOMBRE_ANTES_DE_C_BARRA: Detecta antes de "C/" (demandante judicial)
+    6. NOMBRE_JUDICIAL_CON_COMA: Detecta formato "APELLIDO, NOMBRE" (judicial argentino)
+  * Fase 4: Limpieza de Anclas - Remueve palabras-cue de los nombres
+  * Fase 5: Deduplicación - Elimina duplicados y subconjuntos
 - DNI (7-8 dígitos)
 - Matrícula (alfanumérico, hasta 10 caracteres)
 - CUIF (numérico, 1-10 dígitos)
@@ -39,11 +67,12 @@ except Exception:
 from funcs.normalizacion.normalizar_y_extraer_texto_pdf import (
     normalizacion_avanzada_pdf
 )
-from funcs.nlp_extractors.constantes import PATRONES_DOCUMENTOS, STOP_WORDS, ANCLAS_CONTEXTUALES
+from funcs.nlp_extractors.constantes import PATRONES_DOCUMENTOS, STOP_WORDS, PALABRAS_FILTRO_NOMBRES
 from funcs.nlp_extractors.validadores_entidades import (
     validar_dni, validar_cuil, validar_cuit, 
     validar_cuif, validar_matricula
 )
+from funcs.nlp_extractors.contextual_anchor_rules import ContextualAnchorMatcher
 
 
 _nlp = None
@@ -134,8 +163,11 @@ def extraer_entidades_especificas(
     if debe_procesar_spacy:
         print("[DEBUG] Procesando texto CRUDO con spaCy...")
         nlp = _get_nlp()
+        # Imprimir el texto completo que se va a pasar a spaCy (delimitado)
+        print("[DEBUG] --- TEXTO COMPLETO QUE SE PASARÁ A spaCy (INICIO) ---")
+        print(texto_crudo)
+        print("[DEBUG] --- TEXTO COMPLETO QUE SE PASARÁ A spaCy (FIN) ---")
         doc = nlp(texto_crudo)  # ← SIEMPRE texto_crudo
-        print(f"[DEBUG] spaCy procesó {len(doc)} tokens")
     
     # Estructura de resultado
     resultado: Dict[str, List[Dict[str, Any]]] = {}
@@ -192,18 +224,45 @@ def extraer_entidades_especificas(
 
 def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
     """
-    Extrae nombres usando enfoque HÍBRIDO: Regex + spaCy.
-    Acepta un parámetro opcional 'doc' para reutilizar un Doc ya procesado y evitar
-    volver a llamar al pipeline de spaCy.
+    Extrae nombres usando enfoque HÍBRIDO MEJORADO en 6 fases:
+    
+    Fase 1: Regex - Captura patrones de nombres (mayúsculas/mixtos)
+    Fase 2: spaCy NER - Valida con entidades PER/PERSON
+    Fase 3: Reglas Contextuales - Aplica 6 reglas especializadas:
+        1. ANCLAS_CONTEXTUALES: Detecta cerca de palabras-cue
+        2. NOMBRE_DESPUES_DE_CONTRA: Detecta después de "contra"
+        3. PATRON_C_S: Detecta entre "C/" y "S/"
+        4. APELLIDO_NOMBRE_JUDICIAL: Detecta formato Title Case
+        5. NOMBRE_ANTES_DE_C_BARRA: Detecta antes de "C/" (demandante)
+        6. NOMBRE_JUDICIAL_CON_COMA: Detecta formato "APELLIDO, NOMBRE"
+    Fase 4: Limpieza de Anclas - Elimina palabras-cue de los nombres:
+        - Remueve "señor", "doctor", "dni", etc. de los nombres detectados
+        - Mantiene solo los tokens que son parte del nombre real
+    Fase 5: Deduplicación - Elimina duplicados y subconjuntos:
+        - Duplicados con tokens en diferente orden
+        - Subconjuntos (nombres cortos contenidos en nombres largos)
+    Fase 6: Filtro de Palabras - Elimina nombres con palabras institucionales/jurídicas:
+        - Rechaza nombres que contienen: "expediente", "ley", "constitución", etc.
+        - Comparación case-insensitive: "Ley" = "LEY" = "ley"
+    
+    Args:
+        texto: Texto normalizado a procesar
+        doc: Documento spaCy ya procesado (opcional, para reutilizar)
+        
+    Returns:
+        Lista de nombres únicos con contexto
     """
     # Si no se proporciona un doc, cargar el pipeline y procesar
     if doc is None:
         nlp = _get_nlp()
         doc = nlp(texto)
+    else:
+        nlp = _get_nlp()
     
     nombres_encontrados = []
     nombres_unicos = set()
     candidatos_regex = []
+    candidatos_rechazados_spacy = []  # Almacena candidatos rechazados por spaCy para validar con reglas
     
     # ========== FASE 1: CAPTURAR CANDIDATOS CON REGEX ==========
     print("\n[DEBUG] ===== FASE 1: CAPTURA DE CANDIDATOS CON REGEX =====")
@@ -222,7 +281,14 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         r'\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]{1,}(?:[\s\.]+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{1,}){1,4})\b'
     )
     
-    # Capturar todos los candidatos de ambos patrones
+    # Patrón 3: Nombres con coma (formato judicial argentino: "APELLIDO, NOMBRE")
+    # Captura: "CARBALLO, MARTA" o "GARCÍA LÓPEZ, JUAN CARLOS"
+    # Formato: 1-3 tokens MAYÚSCULAS + COMA + 1-3 tokens MAYÚSCULAS
+    patron_coma = re.compile(
+        r'\b([A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,}){0,2},\s+[A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,}){0,2})\b'
+    )
+    
+    # Capturar todos los candidatos de los tres patrones
     for match in patron_mayusculas.finditer(texto):
         candidatos_regex.append({
             "texto": match.group(1),
@@ -237,6 +303,14 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
             "start": match.start(),
             "end": match.end(),
             "tipo_patron": "mixto"
+        })
+    
+    for match in patron_coma.finditer(texto):
+        candidatos_regex.append({
+            "texto": match.group(1),
+            "start": match.start(),
+            "end": match.end(),
+            "tipo_patron": "coma"
         })
     
     # Debug: Mostrar candidatos capturados por regex
@@ -254,11 +328,6 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
     else:
         print(f"[DEBUG] Texto completo (<=200 chars): {texto}")
     
-    # Imprimir el texto NORMALIZADO completo que se pasa a spaCy (delimitado para facilitar copia)
-    print("\n[DEBUG] --- TEXTO NORMALIZADO QUE SE PASA A SPACY (INICIO) ---")
-    print(texto)
-    print("[DEBUG] --- TEXTO NORMALIZADO QUE SE PASA A SPACY (FIN) ---\n")
- 
     # El doc ya fue procesado por el llamador, usar sus entidades
 
     # Crear conjunto de spans validados por spaCy (entidades PER/PERSON)
@@ -273,14 +342,6 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
     print(f"[DEBUG] spaCy detectó {len(entidades_per_detectadas)} entidades PER: {entidades_per_detectadas}")
 
     
-    # Función auxiliar para verificar si hay anclas contextuales cerca
-    def tiene_ancla_contextual(posicion: int, ventana: int = 100) -> tuple[bool, list]:
-        start = max(0, posicion - ventana)
-        end = min(len(texto), posicion + ventana)
-        segmento = texto[start:end].lower()
-        anclas_encontradas = [ancla for ancla in ANCLAS_CONTEXTUALES if ancla in segmento]
-        return (len(anclas_encontradas) > 0, anclas_encontradas)
-    
     # Procesar cada candidato regex
     print(f"\n[DEBUG] Procesando candidatos regex...")
     for candidato in candidatos_regex:
@@ -289,12 +350,16 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         end_pos = candidato["end"]
         tipo_patron = candidato["tipo_patron"]
 
-        # Como el regex YA NO captura comas (solo captura hasta 5 palabras sin comas),
-        # no necesitamos separar por comas. Procesar el candidato directamente.
-        
-        # Limpiar puntuación del nombre (solo puntos) pero mantener espacios
-        nombre_limpio_temp = re.sub(r'\.', ' ', nombre_raw)
-        nombre_limpio_temp = re.sub(r'\s+', ' ', nombre_limpio_temp).strip()
+        # Limpiar puntuación del nombre
+        # Si es tipo "coma" (formato judicial), eliminar la coma y normalizar
+        if tipo_patron == "coma":
+            # "CARBALLO, MARTA" → "CARBALLO MARTA"
+            nombre_limpio_temp = re.sub(r',', ' ', nombre_raw)
+            nombre_limpio_temp = re.sub(r'\s+', ' ', nombre_limpio_temp).strip()
+        else:
+            # Para otros patrones, solo limpiar puntos
+            nombre_limpio_temp = re.sub(r'\.', ' ', nombre_raw)
+            nombre_limpio_temp = re.sub(r'\s+', ' ', nombre_limpio_temp).strip()
 
         # NO eliminamos stop-words del nombre, solo las usamos para validar contexto
         tokens = nombre_limpio_temp.split()
@@ -319,6 +384,11 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         if tipo_patron == 'mayusculas':
             nombre_limpio = nombre_limpio.title()
 
+        # Validar que todos los tokens tengan al menos 2 caracteres
+        if not _tiene_tokens_validos(nombre_limpio, min_longitud=2):
+            print(f"  ❌ '{nombre_raw}' rechazado: contiene tokens de 1 carácter (ej: 'S E N T E N')")
+            continue
+
         # Evitar duplicados
         if nombre_limpio.lower() in nombres_unicos:
             print(f"  ❌ '{nombre_raw}' rechazado: duplicado")
@@ -335,24 +405,22 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
                 span_coincidente = (span_start, span_end)
                 break
 
-        # Si no fue validado por spaCy, verificar si tiene anclas contextuales
+        # Si no fue validado por spaCy, guardar para validar con reglas contextuales (Fase 3)
         if not validado_por_spacy:
-            tiene_ancla, anclas_encontradas = tiene_ancla_contextual(start_pos)
-
-            # Debug: Mostrar el contexto cercano
-            ctx_start = max(0, start_pos - 100)
-            ctx_end = min(len(texto), end_pos + 100)
+            ctx_start = max(0, start_pos - 70)
+            ctx_end = min(len(texto), end_pos + 70)
             contexto_debug = texto[ctx_start:ctx_end]
-
-            if tiene_ancla:
-                print(f"  ✅ '{nombre_raw}' validado por ANCLA CONTEXTUAL: {anclas_encontradas}")
-                print(f"     Contexto: ...{contexto_debug[:80]}...")
-                validado_por_spacy = True
-            else:
-                print(f"  ❌ '{nombre_raw}' rechazado: NO validado por spaCy ni ancla contextual")
-                print(f"     Contexto: ...{contexto_debug[:80]}...")
-                print(f"     Anclas buscadas en ventana ±100 chars: {ANCLAS_CONTEXTUALES}")
-                continue
+            
+            print(f"  ⚠️  '{nombre_raw}' NO validado por spaCy NER → se validará con reglas contextuales")
+            print(f"     Contexto: ...{contexto_debug[:80]}...")
+            
+            # Guardar candidato rechazado para validación posterior con reglas
+            candidatos_rechazados_spacy.append({
+                "nombre": nombre_limpio,
+                "start": start_pos,
+                "end": end_pos
+            })
+            continue
         else:
             print(f"  ✅ '{nombre_raw}' validado por SPACY (span: {span_coincidente})")
 
@@ -369,20 +437,441 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
             "posicion": start_pos
         })
 
+    # ========== FASE 3: APLICAR REGLAS CONTEXTUALES ==========
+    print("\n[DEBUG] ===== FASE 3: DETECCIÓN CON REGLAS CONTEXTUALES =====")
+    
+    # Inicializar matcher con reglas contextuales
+    context_matcher = ContextualAnchorMatcher(nlp)
+    context_matcher.add_default_rules()
+    
+    # Detectar nombres con reglas contextuales
+    matches_contextuales = context_matcher.find_matches(doc)
+    print(f"[DEBUG] Reglas contextuales detectaron {len(matches_contextuales)} coincidencias")
+    
+    # Agrupar por regla para estadísticas
+    conteo_por_regla = {}
+    for match in matches_contextuales:
+        regla = match.get("rule", "unknown")
+        conteo_por_regla[regla] = conteo_por_regla.get(regla, 0) + 1
+    
+    print(f"[DEBUG] Desglose por regla:")
+    for regla, count in conteo_por_regla.items():
+        print(f"  - {regla}: {count} coincidencias")
+    
+    # Crear conjuntos para validación de candidatos rechazados
+    spans_reglas_contextuales = set()
+    nombres_reglas_contextuales = set()  # Nombres detectados por reglas (normalizados)
+    
+    for match in matches_contextuales:
+        spans_reglas_contextuales.add((match["span_start"], match["span_end"]))
+        # Normalizar y guardar tokens del nombre para comparación flexible
+        nombre_normalizado = " ".join(match["name_tokens"]).lower()
+        nombres_reglas_contextuales.add(nombre_normalizado)
+    
+    # Procesar coincidencias de reglas contextuales
+    for match in matches_contextuales:
+        # Usar nombre_original si está disponible (preserva formato judicial con coma)
+        # De lo contrario, unir tokens normalmente
+        if "nombre_original" in match:
+            nombre_raw = match["nombre_original"]
+            nombre_limpio = nombre_raw  # Preservar tal cual (ej: "CARBALLO, MARTA")
+        else:
+            nombre_raw = " ".join(match["name_tokens"])
+            nombre_limpio = nombre_raw.title()
+        
+        # Verificar si ya fue agregado
+        if nombre_limpio.lower() in nombres_unicos:
+            print(f"  ⚠️  '{nombre_raw}' (regla: {match.get('rule', 'unknown')}, ancla: {match['anchor']}) ya detectado previamente")
+            continue
+        
+        # Agregar nombre detectado por regla contextual
+        nombres_unicos.add(nombre_limpio.lower())
+        
+        # Validar que todos los tokens tengan al menos 2 caracteres
+        if not _tiene_tokens_validos(nombre_limpio, min_longitud=2):
+            print(f"  ❌ '{nombre_raw}' rechazado: contiene tokens de 1 carácter (ej: 'S E N T E N')")
+            continue
+        
+        print(f"  ✅ '{nombre_raw}' detectado por {match.get('rule', 'REGLA_DESCONOCIDA')}")
+        print(f"     Ancla: {match['anchor']}")
+        print(f"     Match completo: '{match['matched_text']}'")
+        print(f"     Contexto: ...{match['context'][:60]}...")
+        
+        nombres_encontrados.append({
+            "nombre": nombre_limpio,
+            "contexto": match["context"],
+            "posicion": match["span_start"]
+        })
+    
+    # ========== VALIDAR CANDIDATOS RECHAZADOS POR SPACY CON REGLAS CONTEXTUALES ==========
+    print(f"\n[DEBUG] Validando {len(candidatos_rechazados_spacy)} candidatos rechazados por spaCy...")
+    
+    for candidato in candidatos_rechazados_spacy:
+        nombre = candidato["nombre"]
+        start_pos = candidato["start"]
+        end_pos = candidato["end"]
+        
+        validado_por_regla = False
+        metodo_validacion = None
+        
+        # Método 1: Verificar superposición de spans (posiciones)
+        for span_start, span_end in spans_reglas_contextuales:
+            # Hay superposición si los rangos se cruzan
+            if not (end_pos <= span_start or start_pos >= span_end):
+                validado_por_regla = True
+                metodo_validacion = "superposición de spans"
+                break
+        
+        # Método 2: Verificar si los tokens del candidato están contenidos en algún nombre de regla
+        if not validado_por_regla:
+            tokens_candidato = set(nombre.lower().split())
+            for nombre_regla in nombres_reglas_contextuales:
+                tokens_regla = set(nombre_regla.split())
+                # Si todos los tokens del candidato están en la regla, o viceversa
+                if tokens_candidato.issubset(tokens_regla) or tokens_regla.issubset(tokens_candidato):
+                    validado_por_regla = True
+                    metodo_validacion = "coincidencia de tokens"
+                    break
+        
+        # Método 3: Verificar si el nombre del candidato contiene o está contenido en algún nombre de regla
+        if not validado_por_regla:
+            nombre_lower = nombre.lower()
+            for nombre_regla in nombres_reglas_contextuales:
+                if nombre_lower in nombre_regla or nombre_regla in nombre_lower:
+                    validado_por_regla = True
+                    metodo_validacion = "subcadena de texto"
+                    break
+        
+        if validado_por_regla:
+            # Validar que todos los tokens tengan al menos 2 caracteres
+            if not _tiene_tokens_validos(nombre, min_longitud=2):
+                print(f"  ❌ '{nombre}' rechazado: contiene tokens de 1 carácter (ej: 'S E N T E N')")
+                continue
+            
+            # Verificar si ya fue agregado
+            if nombre.lower() in nombres_unicos:
+                print(f"  ⚠️  '{nombre}' ya fue agregado por las reglas contextuales")
+                continue
+            
+            # Agregar nombre rescatado por reglas contextuales
+            nombres_unicos.add(nombre.lower())
+            
+            # Extraer contexto
+            start_ctx = max(0, start_pos - 60)
+            end_ctx = min(len(texto), end_pos + 60)
+            contexto = texto[start_ctx:end_ctx].strip()
+            
+            print(f"  ✅ '{nombre}' RESCATADO por regla contextual ({metodo_validacion})")
+            
+            nombres_encontrados.append({
+                "nombre": nombre,
+                "contexto": contexto,
+                "posicion": start_pos
+            })
+        else:
+            print(f"  ❌ '{nombre}' rechazado definitivamente (no validado ni por spaCy ni por reglas)")
+    
+    # ========== FASE 4: LIMPIEZA DE ANCLAS CONTEXTUALES ==========
+    print("\n[DEBUG] ===== FASE 4: LIMPIEZA DE ANCLAS CONTEXTUALES =====")
+    print(f"[DEBUG] Nombres antes de limpiar anclas: {len(nombres_encontrados)}")
+    
+    nombres_sin_anclas = _limpiar_anclas_de_nombres(nombres_encontrados)
+    
+    print(f"[DEBUG] Nombres después de limpiar anclas: {len(nombres_sin_anclas)}")
+    
+    # ========== FASE 5: DEDUPLICACIÓN INTELIGENTE ==========
+    print("\n[DEBUG] ===== FASE 5: DEDUPLICACIÓN INTELIGENTE =====")
+    print(f"[DEBUG] Nombres antes de deduplicación: {len(nombres_sin_anclas)}")
+    
+    nombres_limpios = _eliminar_duplicados_y_subconjuntos(nombres_sin_anclas)
+    
+    print(f"[DEBUG] Nombres después de deduplicación: {len(nombres_limpios)}")
+    print(f"[DEBUG] Nombres eliminados: {len(nombres_sin_anclas) - len(nombres_limpios)}")
+    
+    # ========== FASE 6: FILTRAR PALABRAS NO-NOMBRES ==========
+    print("\n[DEBUG] ===== FASE 6: FILTRO DE PALABRAS NO-NOMBRES =====")
+    print(f"[DEBUG] Nombres antes de filtrar palabras: {len(nombres_limpios)}")
+    
+    nombres_finales = _filtrar_palabras_no_nombres(nombres_limpios)
+    
+    print(f"[DEBUG] Nombres después de filtrar palabras: {len(nombres_finales)}")
+    print(f"[DEBUG] Nombres eliminados: {len(nombres_limpios) - len(nombres_finales)}")
+    
     # Debug: Resumen final
-    print(f"\n[DEBUG] Resumen:")
-    print(f"  - Candidatos regex capturados: {len(candidatos_regex)}")
-    print(f"  - Validados por spaCy o contexto: {len(nombres_encontrados)}")
-    print(f"  - Nombres únicos finales: {[n['nombre'] for n in nombres_encontrados]}")
+    print(f"\n[DEBUG] ===== RESUMEN FINAL =====")
+    print(f"  - Fase 1 - Candidatos regex capturados: {len(candidatos_regex)}")
+    print(f"  - Fase 3 - Detectados por reglas contextuales: {len(matches_contextuales)}")
+    print(f"  - Fase 4 - Nombres después de limpiar anclas: {len(nombres_sin_anclas)}")
+    print(f"  - Fase 5 - Nombres después de deduplicación: {len(nombres_limpios)}")
+    print(f"  - Fase 6 - Nombres después de filtrar palabras: {len(nombres_finales)}")
+    print(f"  - TOTAL nombres únicos finales: {len(nombres_finales)}")
+    lista_nombres_finales = [n['nombre'] for n in nombres_finales]
+    print(f"  - Lista final: {lista_nombres_finales}")
     
     # Ordenar por posición
-    nombres_encontrados.sort(key=lambda x: x['posicion'])
+    nombres_finales.sort(key=lambda x: x['posicion'])
     
     # Eliminar campo posición
-    for nombre in nombres_encontrados:
+    for nombre in nombres_finales:
         del nombre['posicion']
     
-    return nombres_encontrados
+    return nombres_finales
+
+
+def _filtrar_palabras_no_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    FASE 6: Filtra nombres que contienen palabras que NO son nombres de persona.
+    
+    Esta es la última fase de filtrado y se aplica después de toda la validación,
+    deduplicación y limpieza. Rechaza nombres que contienen palabras institucionales,
+    jurídicas o geográficas que indican que NO es un nombre de persona.
+    
+    Ejemplos de lo que filtra:
+        - "Expediente Nacional" → contiene "expediente"
+        - "Constitución Provincial" → contiene "constitución" y "provincial"
+        - "Ley Suprema" → contiene "ley" (case-insensitive)
+        - "Buenos Aires" → contiene "buenos" y "aires"
+    
+    La comparación es case-insensitive: "Ley", "LEY", "ley" se consideran iguales.
+    
+    Args:
+        nombres: Lista de diccionarios con 'nombre', 'contexto', 'posicion'
+        
+    Returns:
+        Lista filtrada sin nombres que contengan palabras filtro
+    """
+    nombres_validos = []
+    
+    for item in nombres:
+        nombre_original = item['nombre']
+        tokens = nombre_original.split()
+        
+        # Convertir tokens a minúsculas para comparación case-insensitive
+        tokens_lower = [t.lower() for t in tokens]
+        
+        # Buscar si algún token está en PALABRAS_FILTRO_NOMBRES
+        palabras_encontradas = [t for t in tokens_lower if t in PALABRAS_FILTRO_NOMBRES]
+        
+        if palabras_encontradas:
+            print(f"  ❌ '{nombre_original}' filtrado: contiene palabras no-nombre ({', '.join(palabras_encontradas)})")
+        else:
+            nombres_validos.append(item)
+    
+    return nombres_validos
+
+
+def _limpiar_anclas_de_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Limpia las ANCLAS_CONTEXTUALES de los nombres detectados y preposiciones/conjunciones en los bordes.
+    
+    Proceso de limpieza en dos pasos:
+    1. Elimina palabras-cue contextuales ("señor", "doctor", "dni", etc.)
+    2. Elimina preposiciones/conjunciones en los bordes ("del", "de", "y", "e", etc.)
+    
+    Ejemplos:
+        "Señor Juez Vanina Marisol Garcia Dni" → "Vanina Marisol Garcia"
+        "Doctor Carlos Pérez" → "Carlos Pérez"
+        "Sr Juan García DNI" → "Juan García"
+        "Del Rene Antonio Quer" → "Rene Antonio Quer"
+        "Y Bianca Giovanna Muller" → "Bianca Giovanna Muller"
+        "Maria De Los Angeles Y" → "Maria De Los Angeles"
+    
+    Args:
+        nombres: Lista de diccionarios con 'nombre', 'contexto', 'posicion'
+        
+    Returns:
+        Lista con nombres limpios (sin anclas contextuales ni preposiciones en bordes)
+    """
+    from funcs.nlp_extractors.constantes import ANCLAS_CONTEXTUALES, limpiar_bordes_nombre
+    
+    nombres_limpios = []
+    
+    for item in nombres:
+        nombre_original = item['nombre']
+        tokens = nombre_original.split()
+        
+        # PASO 1: Filtrar tokens que sean anclas contextuales (comparación case-insensitive)
+        tokens_limpios = []
+        for token in tokens:
+            token_lower = token.lower()
+            # Remover puntos para comparar (ej: "Dr." → "dr")
+            token_sin_punto = token_lower.rstrip('.')
+            
+            # Verificar si el token es un ancla contextual
+            if token_lower not in ANCLAS_CONTEXTUALES and token_sin_punto not in ANCLAS_CONTEXTUALES:
+                tokens_limpios.append(token)
+        
+        # Reconstruir nombre sin anclas
+        nombre_sin_anclas = ' '.join(tokens_limpios).strip()
+        
+        # PASO 2: Limpiar preposiciones y conjunciones del inicio/final
+        nombre_limpio = limpiar_bordes_nombre(nombre_sin_anclas)
+        
+        # Validar que queden al menos 2 tokens (nombre válido)
+        tokens_finales = nombre_limpio.split()
+        if len(tokens_finales) >= 2:
+            if nombre_limpio != nombre_original:
+                print(f"  🧹 '{nombre_original}' → '{nombre_limpio}' (anclas y bordes limpiados)")
+            
+            nombres_limpios.append({
+                'nombre': nombre_limpio,
+                'contexto': item['contexto'],
+                'posicion': item['posicion']
+            })
+        else:
+            print(f"  ❌ '{nombre_original}' descartado: menos de 2 tokens después de limpiar anclas y bordes")
+    
+    return nombres_limpios
+
+
+def _es_nombre_valido_sin_palabras_prohibidas(nombre: str) -> bool:
+    """
+    Verifica si un nombre NO contiene palabras prohibidas (institucionales, jurídicas, etc.).
+    
+    Esta función se usa ANTES de eliminar subconjuntos para evitar que nombres
+    "tóxicos" (con palabras prohibidas) eliminen a nombres válidos más cortos.
+    
+    Ejemplo:
+        "CARLOS PICCIOCHI RIOS" → True (válido)
+        "CARLOS PICCIOCHI RIOS Secretario Cámara" → False (contiene "secretario" y "cámara")
+    
+    Args:
+        nombre: Nombre a validar
+        
+    Returns:
+        True si el nombre NO contiene palabras prohibidas, False en caso contrario
+    """
+    from funcs.nlp_extractors.constantes import PALABRAS_FILTRO_NOMBRES
+    
+    tokens = set(nombre.lower().split())
+    # Si tiene intersección con palabras filtro, es inválido
+    if tokens.intersection(PALABRAS_FILTRO_NOMBRES):
+        return False
+    return True
+
+
+def _tiene_tokens_validos(nombre: str, min_longitud: int = 2) -> bool:
+    """
+    Verifica que todos los tokens del nombre tengan al menos una longitud mínima.
+    
+    Esta función previene la detección de letras sueltas como nombres:
+    - "S E N T E N C I A" (cada token tiene 1 char) → False
+    - "Carlos Picciochi" (tokens de 6 y 9 chars) → True
+    
+    Args:
+        nombre: Nombre a validar
+        min_longitud: Longitud mínima requerida para cada token (default: 2)
+        
+    Returns:
+        True si todos los tokens tienen al menos min_longitud caracteres, False en caso contrario
+    """
+    tokens = nombre.split()
+    
+    # Validar que todos los tokens tengan al menos min_longitud caracteres
+    for token in tokens:
+        if len(token) < min_longitud:
+            return False
+    
+    return True
+
+
+def _eliminar_duplicados_y_subconjuntos(nombres: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Elimina duplicados y subconjuntos de nombres CON VALIDACIÓN INTELIGENTE.
+    
+    **CAMBIO IMPORTANTE (Solución al problema de "Superconjunto Tóxico"):**
+    Solo permite que un nombre largo elimine a un nombre corto si el nombre largo
+    también es VÁLIDO (no contiene palabras prohibidas).
+    
+    Casos que maneja:
+    1. Duplicados con tokens en diferente orden:
+       - "Gómez Sara Antonia" vs "Sara Antonia Gómez" → Elimina uno
+    
+    2. Subconjuntos SOLO SI EL SUPERCONJUNTO ES VÁLIDO:
+       - "Carlos Rios" ⊂ "Carlos Rios Secretario" (inválido) → MANTIENE ambos (el corto sobrevive)
+       - "Carlos Rios" ⊂ "Carlos Maria Rios" (válido) → ELIMINA el corto (el largo lo absorbe)
+    
+    Ejemplo del problema resuelto:
+        Antes: "CARLOS PICCIOCHI RIOS" era eliminado por "CARLOS... Secretario Cámara",
+               luego el largo era filtrado → resultado: ninguno.
+        Ahora: "CARLOS PICCIOCHI RIOS" NO es eliminado porque el superconjunto tiene
+               palabras prohibidas → resultado: "CARLOS PICCIOCHI RIOS" sobrevive.
+    
+    Args:
+        nombres: Lista de diccionarios con 'nombre', 'contexto', 'posicion'
+        
+    Returns:
+        Lista filtrada sin duplicados ni subconjuntos (con lógica inteligente)
+    """
+    if not nombres:
+        return []
+    
+    # Convertir cada nombre a conjunto de tokens (en minúsculas para comparación)
+    nombres_con_tokens = []
+    for item in nombres:
+        tokens = set(item['nombre'].lower().split())
+        nombres_con_tokens.append({
+            'original': item,
+            'tokens': tokens,
+            'tokens_count': len(tokens),
+            'es_valido': _es_nombre_valido_sin_palabras_prohibidas(item['nombre'])
+        })
+    
+    # Ordenar por cantidad de tokens (ASCENDENTE) para procesar primero los más cortos
+    # Esto permite que los cortos se agreguen primero si son válidos
+    nombres_con_tokens.sort(key=lambda x: x['tokens_count'])
+    
+    nombres_validos = []
+    tokens_ya_usados = []
+    
+    for item in nombres_con_tokens:
+        tokens_actual = item['tokens']
+        nombre_actual = item['original']['nombre']
+        es_actual_valido = item['es_valido']
+        es_valido = True
+        
+        # Si el nombre actual tiene palabras prohibidas, descartarlo de inmediato
+        if not es_actual_valido:
+            print(f"  🗑️  '{nombre_actual}' eliminado: contiene palabras prohibidas (pre-filtro)")
+            continue
+        
+        # Verificar contra todos los nombres ya agregados
+        for idx, tokens_existente in enumerate(tokens_ya_usados):
+            nombre_existente = nombres_validos[idx]['nombre']
+            
+            # CASO 1: Duplicado con tokens en diferente orden
+            # Si los conjuntos de tokens son idénticos → es duplicado
+            if tokens_actual == tokens_existente:
+                print(f"  🗑️  '{nombre_actual}' eliminado: duplicado con diferente orden")
+                es_valido = False
+                break
+            
+            # CASO 2: El actual es subconjunto de uno existente
+            # Si el existente ya está en la lista, significa que era válido
+            # Por lo tanto, el actual (más corto) debe ser eliminado
+            if tokens_actual.issubset(tokens_existente):
+                print(f"  🗑️  '{nombre_actual}' eliminado: subconjunto de '{nombre_existente}'")
+                es_valido = False
+                break
+            
+            # CASO 3: El existente es subconjunto del actual
+            # Aquí el actual es más largo. Debemos verificar si el actual es válido.
+            # Si el actual es válido, eliminamos el existente (más corto) y agregamos el actual.
+            # Si el actual NO es válido, mantenemos el existente.
+            # Pero ya validamos arriba que el actual es válido, así que podemos reemplazar.
+            if tokens_existente.issubset(tokens_actual):
+                print(f"  🔄  '{nombre_existente}' será reemplazado por '{nombre_actual}' (versión más completa)")
+                # Eliminar el existente de las listas
+                nombres_validos.pop(idx)
+                tokens_ya_usados.pop(idx)
+                # El actual se agregará después del bucle
+                break
+        
+        if es_valido:
+            nombres_validos.append(item['original'])
+            tokens_ya_usados.append(tokens_actual)
+    
+    return nombres_validos
 
 
 def _extraer_y_validar_documento(texto: str, tipo_doc: str) -> List[Dict[str, any]]:

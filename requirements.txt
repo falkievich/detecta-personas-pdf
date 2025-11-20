@@ -7,3 +7,7 @@ PyMuPDF  # Se utiliza Fitz
 rapidfuzz
 python-multipart
 filetype # Validación de archivos
+
+# NER (Named Entity Recognition)
+spacy
+# Instalar modelo: python -m spacy download es_core_news_md
