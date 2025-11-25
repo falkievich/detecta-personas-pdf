@@ -19,7 +19,18 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     pip install --retries 10 --timeout 120 -r requirements.txt
 
 # ====================
-# CAPA 2: Código de la aplicación (se invalida con cada cambio de código)
+# CAPA 2: Modelo de spaCy (SE CACHEA - solo se ejecuta una vez)
+# ====================
+# Descargar e instalar el modelo de spaCy en español (es_core_news_lg)
+# Este paso se cachea independientemente, así que no se repite en cada build
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    python -m spacy download es_core_news_lg
+
+# Verificar que el modelo se instaló correctamente
+RUN python -c "import spacy; nlp = spacy.load('es_core_news_lg'); print('✅ Modelo es_core_news_lg cargado exitosamente')"
+
+# ====================
+# CAPA 3: Código de la aplicación (se invalida con cada cambio de código)
 # ====================
 # Copiar el código de la aplicación AL FINAL
 COPY . .

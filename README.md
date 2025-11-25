@@ -4,7 +4,7 @@ Este proyecto ofrece dos funcionalidades complementarias para extraer y comparar
 
 ---
 
-## Función 1 — Detectar Personas en un PDF
+## Función 1 — Detectar Automáticamente Personas en un PDF
 
 **Descripción**
 
@@ -61,12 +61,251 @@ Al invocar `/upload_files` con solo el `pdf_file`, la respuesta JSON contendrá 
 
 ---
 
-## Función 2 — Comparar PDF con `.json` / `.txt`
+## Función 2 — Detectar Variables Seleccionadas en un PDF
 
 **Descripción**
 
-- Al mismo endpoint `POST /upload_files` puedes adjuntar opcionalmente un archivo de datos (`.json` o `.txt`) junto con el PDF.
-- El sistema extrae la información del PDF (como en la Función 1) y compara los valores provistos en el `.json/.txt` con los valores extraídos del PDF.
+Esta función te permite **seleccionar específicamente** qué variables deseas extraer del PDF. A diferencia de la Función 1 (que detecta automáticamente personas completas con todos sus identificadores), aquí puedes elegir extraer solo nombres, solo DNI, solo CUIL, o cualquier combinación que necesites.
+
+**Diferencias con la Función 1:**
+- **Función 1**: Detecta automáticamente PERSONAS completas (nombre + apellido + todos los identificadores asociados). Usa endpoint `/upload_files` con lógica específica para detección integral de personas.
+- **Función 2**: Tú eliges qué variables extraer (solo nombres, solo DNI, ambos, etc.). Usa endpoint diferente con lógica más granular y flexible.
+
+**Cómo se usa (endpoint)**
+
+- Endpoint: `POST /extraer_entidades`
+  - Form data o JSON:
+    - `pdf_file`: archivo PDF (requerido)
+    - `entidades_solicitadas`: lista de variables a extraer
+
+**Variables que puedes seleccionar:**
+
+| Variable | Descripción | Validación |
+|----------|-------------|------------|
+| `nombre` o `nombres` | Personas físicas detectadas con pipeline de 6 fases | 6 reglas contextuales + filtros de limpieza |
+| `dni` | 7-8 dígitos | Longitud + solo números |
+| `cuil` | 11 dígitos (AA-BBBBBBBB-C) | Prefijos 20/23/24/27 + dígito verificador (módulo 11) |
+| `cuit` | 11 dígitos (AA-BBBBBBBB-C) | Prefijos 20/23/24/27/30/33/34 + dígito verificador (módulo 11) |
+| `cuif` | 1-10 dígitos | Solo números |
+| `matricula` | 1-10 caracteres alfanuméricos | Solo letras y números |
+
+**Ejemplos de uso:**
+
+```json
+// Extraer solo nombres
+{
+  "entidades_solicitadas": ["nombre"]
+}
+
+// Extraer solo DNI
+{
+  "entidades_solicitadas": ["dni"]
+}
+
+// Extraer nombres y DNI
+{
+  "entidades_solicitadas": ["nombre", "dni"]
+}
+
+// Extraer todos los identificadores (sin nombres)
+{
+  "entidades_solicitadas": ["dni", "cuil", "cuit", "cuif", "matricula"]
+}
+
+// Extraer solo CUIL y CUIT
+{
+  "entidades_solicitadas": ["cuil", "cuit"]
+}
+```
+
+**Documentación Técnica del Pipeline de Extracción**
+
+### Pipeline de Extracción de Nombres (6 Fases)
+
+Cuando solicitas la variable `nombre`, se ejecuta un pipeline híbrido de 6 fases que combina expresiones regulares, NER de spaCy y reglas contextuales específicas para documentos judiciales argentinos:
+
+```
+TEXTO DEL PDF
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  FASE 1: Captura con Regex                                  │
+│  • PATRON_MAYUSCULAS: "GARCÍA LÓPEZ"                        │
+│  • PATRON_MIXTO: "Juan Pérez"                               │
+│  • PATRON_COMA: "CARBALLO, MARTA"                           │
+└─────────────────────────────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  FASE 2: Validación con spaCy NER                           │
+│  • Valida candidatos contra entidades PER/PERSON            │
+│  • Rechazados → pasan a Fase 3                              │
+└─────────────────────────────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  FASE 3: Reglas Contextuales (6 reglas)                     │
+│  1. ANCLAS_CONTEXTUALES (señor, DNI, etc.)                  │
+│  2. NOMBRE_DESPUES_DE_CONTRA                                │
+│  3. PATRON_C_S (C/ nombre S/)                               │
+│  4. APELLIDO_NOMBRE_JUDICIAL (Title Case)                   │
+│  5. NOMBRE_ANTES_DE_C_BARRA                                 │
+│  6. NOMBRE_JUDICIAL_CON_COMA                                │
+└─────────────────────────────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  FASE 4: Limpieza de Anclas                                 │
+│  • Remueve: "señor", "doctor", "DNI", etc.                  │
+│  • "señor Juan Pérez" → "Juan Pérez"                        │
+└─────────────────────────────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  FASE 5: Deduplicación y Limpieza de Bordes                 │
+│  • Elimina duplicados y subconjuntos                        │
+│  • Limpia preposiciones: "En Vallejos" → "Vallejos"         │
+└─────────────────────────────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  FASE 6: Filtro de Palabras No-Nombres                      │
+│  • Elimina: "Juzgado", "Tribunal", "Corte", etc.           │
+└─────────────────────────────────────────────────────────────┘
+     │
+     ▼
+NOMBRES FINALES VALIDADOS
+```
+
+**Detalle de las 6 Reglas Contextuales:**
+
+1. **ANCLAS_CONTEXTUALES**: Detecta nombres cerca de palabras-cue con direccionalidad
+   - DERECHA: Palabras como "ciudadano", "señor", "doctor" → busca nombre a la derecha
+   - IZQUIERDA: Palabras como "DNI", "CUIL", "documento" → busca nombre a la izquierda
+
+2. **NOMBRE_DESPUES_DE_CONTRA**: Detecta nombres después de "contra" en expedientes judiciales
+   - Patrón: "contra" + 2-6 tokens en MAYÚSCULAS (mínimo 2 caracteres por token)
+
+3. **PATRON_C_S**: Detecta nombres entre "C/" y "S/" (formato expediente judicial argentino)
+   - Formato: "C/ NOMBRE S/"
+
+4. **APELLIDO_NOMBRE_JUDICIAL**: Detecta formato Title Case judicial
+   - Patrón: 2-6 tokens en Title Case (ej: "Codazzi Luis", "Daniel Ernesto D'Avis")
+   - Mínimo 2 caracteres por token para evitar acrónimos
+
+5. **NOMBRE_ANTES_DE_C_BARRA**: Detecta nombres antes de "C/" (demandante en formato judicial)
+   - Patrón: NOMBRE + "C/"
+
+6. **NOMBRE_JUDICIAL_CON_COMA**: Detecta formato "APELLIDO, NOMBRE" (judicial argentino)
+   - Usa regex: `([A-Z]{2,}(?:\s+[A-Z]{2,}){0,2}),\s+([A-Z]{2,}(?:\s+[A-Z]{2,}){0,2})`
+
+### Extracción y Validación de Documentos
+
+Cuando solicitas variables de tipo documento (`dni`, `cuil`, `cuit`, `cuif`, `matricula`), se aplica el siguiente proceso:
+
+```
+TEXTO NORMALIZADO DEL PDF
+     │
+     ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Detección con Regex + Validación Estricta                   │
+├──────────────────────────────────────────────────────────────┤
+│  DNI      → 7-8 dígitos                                      │
+│  CUIL     → 11 dígitos + prefijo + dígito verificador       │
+│  CUIT     → 11 dígitos + prefijo + dígito verificador       │
+│  CUIF     → 1-10 dígitos                                     │
+│  Matrícula → 1-10 alfanuméricos                              │
+└──────────────────────────────────────────────────────────────┘
+     │
+     ▼
+DOCUMENTOS VALIDADOS
+```
+
+**Validadores implementados:**
+
+- **DNI**: `validar_dni()` - Verifica longitud (7-8 dígitos) y que sean solo números
+- **CUIL**: `validar_cuil()` - Verifica longitud (11 dígitos), prefijos válidos (20/23/24/27) y dígito verificador con algoritmo módulo 11
+- **CUIT**: `validar_cuit()` - Verifica longitud (11 dígitos), prefijos válidos (20/23/24/27/30/33/34) y dígito verificador con algoritmo módulo 11
+- **CUIF**: `validar_cuif()` - Verifica longitud (1-10 dígitos) y que sean solo números
+- **Matrícula**: `validar_matricula()` - Verifica longitud (1-10 caracteres) y que sean solo alfanuméricos
+
+**Algoritmo de Validación del Dígito Verificador (CUIL/CUIT):**
+
+El dígito verificador se calcula usando el algoritmo de módulo 11:
+1. Se multiplican los primeros 10 dígitos por la secuencia: `[5, 4, 3, 2, 7, 6, 5, 4, 3, 2]`
+2. Se suma el resultado de las multiplicaciones
+3. Se calcula el resto de dividir la suma entre 11
+4. El dígito verificador es `11 - resto`
+5. Casos especiales:
+   - Si resultado = 11 → dígito verificador = 0
+   - Si resultado = 10 → dígito verificador = 9
+
+Ejemplo: CUIL `20-12345678-X`
+```
+Dígitos: 2 0 1 2 3 4 5 6 7 8
+Multiplicadores: 5 4 3 2 7 6 5 4 3 2
+Productos: 10+0+3+4+21+24+25+24+21+16 = 148
+Resto: 148 % 11 = 5
+Dígito verificador: 11 - 5 = 6
+```
+
+**Ejemplo práctico completo:**
+
+Texto del PDF:
+```
+En la ciudad de Buenos Aires, se presenta el ciudadano GARCÍA LÓPEZ JUAN CARLOS 
+DNI 12345678 CUIL 20-12345678-1 en contra de PÉREZ MARTÍNEZ MARÍA FERNANDA.
+El Dr. Codazzi Luis, matrícula MP987654, representa al demandante.
+```
+
+Solicitud: `{"entidades_solicitadas": ["nombre", "dni", "cuil", "matricula"]}`
+
+Respuesta:
+```json
+{
+  "nombres": [
+    {
+      "nombre": "García López Juan Carlos",
+      "contexto": "...ciudadano GARCÍA LÓPEZ JUAN CARLOS DNI..."
+    },
+    {
+      "nombre": "Pérez Martínez María Fernanda",
+      "contexto": "...contra PÉREZ MARTÍNEZ MARÍA FERNANDA..."
+    },
+    {
+      "nombre": "Codazzi Luis",
+      "contexto": "...Dr. Codazzi Luis, matrícula..."
+    }
+  ],
+  "dni": [
+    {
+      "valor": "12345678",
+      "contexto": "...DNI 12345678 CUIL..."
+    }
+  ],
+  "cuil": [
+    {
+      "valor": "20-12345678-1",
+      "contexto": "...CUIL 20-12345678-1 en..."
+    }
+  ],
+  "matricula": [
+    {
+      "valor": "MP987654",
+      "contexto": "...matrícula MP987654, representa..."
+    }
+  ]
+}
+```
+
+---
+
+## Función 3 — Comparar PDF con `.json` / `.txt`
+
+**Descripción**
+
+- Al endpoint `POST /upload_files` (Función 1) puedes adjuntar opcionalmente un archivo de datos (`.json` o `.txt`) junto con el PDF.
+- El sistema extrae la información del PDF automáticamente (como en la Función 1) y compara los valores provistos en el `.json/.txt` con los valores extraídos del PDF.
 - Para cada par valor objetivo (del .json/.txt) vs candidato (del PDF), se calcula una puntuación de similitud y se clasifica en una de 4 categorías: `exacta`, `alta`, `media`, `baja`.
 
 **Entrada esperada (ejemplo JSON)**
@@ -140,15 +379,33 @@ Al enviar `data_file` junto al `pdf_file`, la respuesta incluirá `comparison_pe
 
 ## API y uso rápido
 
-- `POST /upload_files` (principal)
+### Endpoints principales
+
+**Función 1 - Detectar Personas Automáticamente:**
+- `POST /upload_files`
   - Form data:
     - `pdf_file` (file, requerido): PDF a analizar
-    - `data_file` (file, opcional): `.json` o `.txt` con los valores a comparar
-  - Respuesta: JSON con `personas_identificadas_pdf` y, si se suministró `data_file`, `comparison_result`.
+    - `data_file` (file, opcional): `.json` o `.txt` con los valores a comparar (activa Función 3)
+  - Respuesta: JSON con `personas_identificadas_pdf` (personas completas con todos sus identificadores)
+  - Si se envía `data_file`, también incluye `comparison_result` (Función 3)
 
-- `POST /detect_phrase` (auxiliar)
+**Función 2 - Detectar Variables Seleccionadas:**
+- `POST /extraer_entidades`
+  - Form data o Body JSON:
+    - `pdf_file`: archivo PDF (requerido)
+    - `entidades_solicitadas`: array de strings (ej: `["nombre", "dni"]`)
+  - Respuesta: JSON con solo las entidades solicitadas
+  - Ejemplo: si solicitas `["nombre"]`, solo recibes nombres (sin identificadores)
+
+**Función 3 - Comparar:**
+- Se activa automáticamente en `POST /upload_files` al enviar `data_file`
+  - Compara los valores del archivo `.json/.txt` con los extraídos del PDF
+  - Retorna puntuaciones y categorías de similitud para cada campo
+
+**Endpoints auxiliares:**
+- `POST /detect_phrase`
   - Body JSON: `{ "text": "<frase o párrafo>" }`
-  - Útil para detectar nombre + identificador dentro de un texto sin subir un PDF.
+  - Útil para detectar nombre + identificador dentro de un texto sin subir un PDF
 
 Nota: los endpoints están implementados con FastAPI. Al desplegar la aplicación con Docker (o ejecutar localmente con Uvicorn), FastAPI genera documentación automática accesible en:
 
@@ -175,7 +432,13 @@ Pasos para construir y desplegar:
 
 1) Reconstruir la imagen:
 
+    **Windows (con BuildKit habilitado)**
+   
    .\build.ps1
+
+   **Manualmente**
+
+   docker-compose build --progress=plain
 
 2) Levantar el contenedor con la imagen ya construida:
 

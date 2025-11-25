@@ -111,25 +111,3 @@ def _validar_digito_verificador(numero: str) -> bool:
         return int(numero[10]) == digito_esperado
     except (ValueError, IndexError):
         return False
-
-
-def extraer_tipo_persona(numero_cuit_cuil: str) -> str:
-    """
-    Determina el tipo de persona según el prefijo de CUIT/CUIL.
-    
-    Returns:
-        "fisica", "juridica" o "desconocido"
-    """
-    numero_limpio = re.sub(r'\D', '', numero_cuit_cuil)
-    
-    if len(numero_limpio) != 11:
-        return "desconocido"
-    
-    prefijo = int(numero_limpio[:2])
-    
-    if prefijo in (20, 23, 24, 27):
-        return "fisica"
-    elif prefijo in (30, 33, 34):
-        return "juridica"
-    else:
-        return "desconocido"

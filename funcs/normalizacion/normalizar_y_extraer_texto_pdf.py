@@ -139,20 +139,33 @@ def normalizacion_avanzada_pdf(path_pdf: str = None, raw_text: str = None) -> st
     # 3.1) Eliminar variantes de 'Número' (con o sin acento, plural o abreviado) solo si preceden a un número
     texto = re.sub(r'\bN[úu]m(?:ero|eros|\.?)?\s*[-:]?\s*(?=\d)', '', texto, flags=re.IGNORECASE)
 
-    # 4) Asegurar siempre un espacio entre etiqueta y número, eliminando cualquier caracter no alfanumérico que pueda quedar pegado
-    texto = re.sub(r'\b(DNI|MATRICULA)[^\w]*(\d+)\b', r'\1 \2', texto, flags=re.IGNORECASE)
-
-    # 5) Quitar separadores de miles o fraccionadores entre dígitos (., -, /) incluso con espacios
+    # 4) Eliminar guiones largos especiales y convertirlos a guiones normales
+    # Guiones largos: — (em dash), – (en dash)
+    texto = texto.replace('—', '-').replace('–', '-')
+    
+    # 5) Quitar separadores entre dígitos (., -, /) incluso con espacios
+    # Esto convierte: 20-35123456-7 → 20351234567
     texto = re.sub(r'(?<=\d)[\.\-/]\s*(?=\d)', '', texto)
+    # También eliminar separadores justo después de dígitos (guiones/puntos/barras finales)
+    texto = re.sub(r'(?<=\d)[\.\-/]+(?=\s|[^\d\w]|$)', '', texto)
+    
+    # 6) Normalizar paréntesis y caracteres especiales alrededor de números
+    # Eliminar paréntesis/comillas/corchetes que encierran números
+    texto = re.sub(r'(["\(\[\{])\s*(\d+)\s*(["\)\]\}])', r' \2 ', texto)
+    # Limpiar caracteres especiales sueltos al inicio/final de números
+    texto = re.sub(r'(["\(\[\{])\s*(\d)', r' \2', texto)  # Eliminar apertura antes de dígito
+    texto = re.sub(r'(\d)\s*(["\)\]\}])', r'\1 ', texto)  # Eliminar cierre después de dígito
 
-    # 6) Eliminar puntos entre letras (Ej, S.R.L. -> SRL.)
+    # 7) Eliminar puntos entre letras (Ej, S.R.L. -> SRL.)
     texto = eliminar_puntos_antes_de_cuit(texto)
 
-    # 7) Eliminar ruido entre etiquetas y sus números. Cubre casos como: CUIT NS 20321777636 → CUIT 20321777636
+    # 8) Asegurar siempre un espacio entre etiqueta y número
+    texto = re.sub(r'\b(DNI|MATRICULA)[^\w]*(\d+)\b', r'\1 \2', texto, flags=re.IGNORECASE)
     
-    texto = re.sub( r'\b(DNI|MATRICULA|CUIT|CUIL|CUIF)\b[^\d\n]{0,10}?(?:\d+[a-z]{1,3}\.?|[a-z]{1,5}\.?)?\s*(?=\d{4,})', r'\1 ', texto, flags=re.IGNORECASE)
+    # 9) Eliminar ruido entre etiquetas y sus números. Cubre casos como: CUIT NS 20321777636 → CUIT 20321777636
+    texto = re.sub(r'\b(DNI|MATRICULA|CUIT|CUIL|CUIF)\b[^\d\n]{0,10}?(?:\d+[a-z]{1,3}\.?|[a-z]{1,5}\.?)?\s*(?=\d{4,})', r'\1 ', texto, flags=re.IGNORECASE)
 
-    # 8) Colapsar cualquier whitespace a un solo espacio y recortar
+    # 10) Colapsar cualquier whitespace a un solo espacio y recortar
     texto = re.sub(r'\s+', ' ', texto).strip()
 
     return texto

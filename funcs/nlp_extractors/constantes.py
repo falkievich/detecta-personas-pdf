@@ -7,11 +7,11 @@ import re
 
 # Patrones de documentos (regex base)
 PATRONES_DOCUMENTOS = {
-    "DNI": r'\bDNI\s+(\d+)\b',
-    "MATRICULA": r'\bMATRICULA\s+(\d+)\b',
-    "CUIF": r'\bCUIF\s+(\d+)\b',
-    "CUIT": r'\bCUIT\s+(\d+)\b',
-    "CUIL": r'\bCUIL\s+(\d+)\b',
+    "DNI": r'\bDNI\s+([\d\s]+)\b',
+    "MATRICULA": r'\bMATRICULA\s+([\d]+)\b',
+    "CUIF": r'\bCUIF\s+([\d]+)\b',
+    "CUIT": r'\bCUIT\s+([\d\s]+?)(?=\s*[^\d]|$)',
+    "CUIL": r'\bCUIL\s+([\d\s]+?)(?=\s*[^\d]|$)',
 }
 
 # Stop-words para filtrar nombres
@@ -25,19 +25,6 @@ STOP_WORDS = {
     "doctor", "doctora", "dr", "dra", "drs", "dras", "dr.", "dra.", "drs.", "dras.",
     "abogado", "abogada", "letrado", "letrada",
 }
-
-# Patrones de nombres (para reutilizar)
-PATRON_NOMBRE_NATURAL = re.compile(
-    r'\b([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+'
-    r'(?:\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+){1,5})\b'
-)
-
-PATRON_NOMBRE_JURIDICO = re.compile(
-    r'\b('
-    r'[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ\.\&]+'
-    r'(?:\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ\.\&]+){1,7}'
-    r')\b'
-)
 
 # Anclas contextuales - Nombres a la DERECHA del ancla
 ANCLAS_CONTEXTUALES_DERECHA = [
@@ -63,7 +50,7 @@ ANCLAS_CONTEXTUALES_IZQUIERDA = [
 ANCLAS_CONTEXTUALES = ANCLAS_CONTEXTUALES_DERECHA + ANCLAS_CONTEXTUALES_IZQUIERDA
 
 # Palabras a eliminar del inicio/final de nombres (preposiciones, conjunciones)
-PALABRAS_LIMPIEZA_BORDES = {"del", "de", "y", "e", "la", "el", "los", "las"}
+PALABRAS_LIMPIEZA_BORDES = {"del", "de", "y", "e", "la", "el", "los", "las", "en"}
 
 
 def limpiar_bordes_nombre(nombre: str) -> str:

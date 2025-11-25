@@ -1,44 +1,6 @@
 """
 Módulo para extraer entidades específicas de un PDF usando spaCy.
-Permite seleccionar qué tipo de entidades se desean extraer:
-- Nombres (personas) - Enfoque híbrido MEJORADO en 5 fases:
-  * Fase 1: Regex - Captura patrones de nombres (mayúsculas/mixtos)
-  * Fase 2: spaCy NER - Valida con entidades PER/PERSON
-  * Fase 3: Reglas Contextuales - Sistema extensible de 6 reglas:
-    1. ANCLAS_CONTEXTUALES: Detecta cerca de palabras-c    # Procesar coincidencias de reglas contextuales
-    for match in matches_contextuales:
-        # Usar nombre_original si está disponible (preserva formato judicial con coma)
-        # De lo contrario, unir tokens normalmente
-        if "nombre_original" in match:
-            nombre_raw = match["nombre_original"]
-            nombre_limpio = nombre_raw  # Preservar tal cual (ej: "CARBALLO, MARTA")
-        else:
-            nombre_raw = " ".join(match["name_tokens"])
-            nombre_limpio = nombre_raw.title()
-        
-        # Verificar si ya fue agregado
-        if nombre_limpio.lower() in nombres_unicos:
-            print(f"  ⚠️  '{nombre_raw}' (regla: {match.get('rule', 'unknown')}, ancla: {match['anchor']}) ya detectado previamente")
-            continue
-        
-        # Agregar nombre detectado por regla contextual
-        nombres_unicos.add(nombre_limpio.lower())
-        
-        print(f"  ✅ '{nombre_raw}' detectado por {match.get('rule', 'REGLA_DESCONOCIDA')}")ni, etc.)
-    2. NOMBRE_DESPUES_DE_CONTRA: Detecta después de "contra"
-    3. PATRON_C_S: Detecta entre "C/" y "S/" (expedientes judiciales)
-    4. APELLIDO_NOMBRE_JUDICIAL: Detecta formato Title Case (Apellido Nombre)
-    5. NOMBRE_ANTES_DE_C_BARRA: Detecta antes de "C/" (demandante judicial)
-    6. NOMBRE_JUDICIAL_CON_COMA: Detecta formato "APELLIDO, NOMBRE" (judicial argentino)
-  * Fase 4: Limpieza de Anclas - Remueve palabras-cue de los nombres
-  * Fase 5: Deduplicación - Elimina duplicados y subconjuntos
-- DNI (7-8 dígitos)
-- Matrícula (alfanumérico, hasta 10 caracteres)
-- CUIF (numérico, 1-10 dígitos)
-- CUIT (11 dígitos, prefijos válidos: 20-27, 30, 33-34)
-- CUIL (11 dígitos, prefijos válidos: 20, 23-24, 27)
-
-Reutiliza constantes y validadores compartidos para evitar duplicación de código.
+Soporta extracción de nombres (6 fases) y documentos (DNI, CUIL, CUIT, CUIF, Matrícula).
 """
 import re
 import os
@@ -75,6 +37,11 @@ from funcs.nlp_extractors.validadores_entidades import (
 from funcs.nlp_extractors.contextual_anchor_rules import ContextualAnchorMatcher
 
 
+# Patrones regex precompilados para extracción de nombres
+PATRON_MAYUSCULAS = re.compile(r'\b([A-ZÁÉÍÓÚÑ]{2,}(?:[\s\.]+[A-ZÁÉÍÓÚÑ]{2,}){1,4})\b')
+PATRON_MIXTO = re.compile(r'\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]{1,}(?:[\s\.]+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{1,}){1,4})\b')
+PATRON_COMA = re.compile(r'\b([A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,}){0,2},\s+[A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,}){0,2})\b')
+
 _nlp = None
 
 def _get_nlp():
@@ -96,6 +63,60 @@ def _get_nlp():
                 "Ejecuta: python -m spacy download es_core_news_md"
             )
     return _nlp
+
+
+def _extraer_contexto(texto: str, start: int, end: int, window: int = 60) -> str:
+    """
+    Extrae el contexto alrededor de una posición en el texto.
+    
+    Args:
+        texto: Texto completo
+        start: Posición inicial de la entidad
+        end: Posición final de la entidad
+        window: Ventana de contexto (caracteres antes y después)
+        
+    Returns:
+        Contexto extraído
+    """
+    start_ctx = max(0, start - window)
+    end_ctx = min(len(texto), end + window)
+    return texto[start_ctx:end_ctx].strip()
+
+
+def _limpiar_y_normalizar_nombre(nombre_raw: str, tipo_patron: str) -> tuple[list[str], str]:
+    """
+    Limpia y normaliza un nombre capturado por regex.
+    
+    Args:
+        nombre_raw: Nombre original capturado
+        tipo_patron: Tipo de patrón ("mayusculas", "mixto", "coma")
+        
+    Returns:
+        Tupla (tokens_limpios, nombre_normalizado)
+    """
+    # Limpiar puntuación del nombre
+    if tipo_patron == "coma":
+        # "CARBALLO, MARTA" → "CARBALLO MARTA"
+        nombre_limpio_temp = re.sub(r',', ' ', nombre_raw)
+        nombre_limpio_temp = re.sub(r'\s+', ' ', nombre_limpio_temp).strip()
+    else:
+        # Para otros patrones, solo limpiar puntos
+        nombre_limpio_temp = re.sub(r'\.', ' ', nombre_raw)
+        nombre_limpio_temp = re.sub(r'\s+', ' ', nombre_limpio_temp).strip()
+
+    # Filtrar stop-words al inicio/final
+    tokens = nombre_limpio_temp.split()
+    while tokens and tokens[0].lower() in STOP_WORDS:
+        tokens.pop(0)
+    while tokens and tokens[-1].lower() in STOP_WORDS:
+        tokens.pop()
+
+    # Normalizar nombre final
+    nombre_limpio = ' '.join(tokens)
+    if tipo_patron == 'mayusculas':
+        nombre_limpio = nombre_limpio.title()
+    
+    return tokens, nombre_limpio
 
 
 
@@ -172,16 +193,13 @@ def extraer_entidades_especificas(
     # Estructura de resultado
     resultado: Dict[str, List[Dict[str, Any]]] = {}
     
-    # ========== EXTRACCIÓN DE NOMBRES (USA TEXTO CRUDO) ==========
+    # Extracción de nombres (usa texto crudo)
     if "nombre" in entidades_solicitadas:
         print("[DEBUG] Extrayendo NOMBRES con texto CRUDO...")
-        resultado["nombres"] = _extraer_nombres_con_contexto(
-            texto_crudo,  # ← TEXTO CRUDO
-            doc=doc
-        )
+        resultado["nombres"] = _extraer_nombres_con_contexto(texto_crudo, doc=doc)
         print(f"[DEBUG] Nombres encontrados: {len(resultado['nombres'])}")
     
-    # ========== EXTRACCIÓN DE DOCUMENTOS (USA TEXTO NORMALIZADO) ==========
+    # Extracción de documentos (usa texto normalizado)
     for entidad in entidades_solicitadas:
         if entidad == "nombre":
             continue  # Ya procesado arriba
@@ -235,12 +253,13 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         4. APELLIDO_NOMBRE_JUDICIAL: Detecta formato Title Case
         5. NOMBRE_ANTES_DE_C_BARRA: Detecta antes de "C/" (demandante)
         6. NOMBRE_JUDICIAL_CON_COMA: Detecta formato "APELLIDO, NOMBRE"
-    Fase 4: Limpieza de Anclas - Elimina palabras-cue de los nombres:
+    Fase 4: Limpieza de Anclas - Elimina palabras-cue contextuales:
         - Remueve "señor", "doctor", "dni", etc. de los nombres detectados
         - Mantiene solo los tokens que son parte del nombre real
-    Fase 5: Deduplicación - Elimina duplicados y subconjuntos:
-        - Duplicados con tokens en diferente orden
-        - Subconjuntos (nombres cortos contenidos en nombres largos)
+    Fase 5: Deduplicación y Limpieza de Bordes:
+        - Paso 5.1: Elimina duplicados con tokens en diferente orden
+        - Paso 5.1: Elimina subconjuntos (nombres cortos contenidos en nombres largos)
+        - Paso 5.2: Limpia preposiciones/conjunciones al inicio/final ("en", "del", "y", etc.)
     Fase 6: Filtro de Palabras - Elimina nombres con palabras institucionales/jurídicas:
         - Rechaza nombres que contienen: "expediente", "ley", "constitución", etc.
         - Comparación case-insensitive: "Ley" = "LEY" = "ley"
@@ -267,29 +286,8 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
     # ========== FASE 1: CAPTURAR CANDIDATOS CON REGEX ==========
     print("\n[DEBUG] ===== FASE 1: CAPTURA DE CANDIDATOS CON REGEX =====")
     
-    # Patrón mejorado: Captura nombres de 2-5 palabras (NO LISTAS)
-    # Restricción: Mínimo 2 palabras, máximo 5 palabras
-    # Patrón 1: Nombres en MAYÚSCULA COMPLETA (permite puntos, NO COMAS para evitar listas)
-    # Captura: "SÁNCHEZ MARIÑO" o "GARCÍA LÓPEZ MARTÍN"
-    patron_mayusculas = re.compile(
-        r'\b([A-ZÁÉÍÓÚÑ]{2,}(?:[\s\.]+[A-ZÁÉÍÓÚÑ]{2,}){1,4})\b'
-    )
-    
-    # Patrón 2: Nombres mixtos (Primera Letra Mayúscula + minúsculas, permite puntos, NO COMAS)
-    # Captura: "Juan Pérez" o "María Andrea López"
-    patron_mixto = re.compile(
-        r'\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]{1,}(?:[\s\.]+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{1,}){1,4})\b'
-    )
-    
-    # Patrón 3: Nombres con coma (formato judicial argentino: "APELLIDO, NOMBRE")
-    # Captura: "CARBALLO, MARTA" o "GARCÍA LÓPEZ, JUAN CARLOS"
-    # Formato: 1-3 tokens MAYÚSCULAS + COMA + 1-3 tokens MAYÚSCULAS
-    patron_coma = re.compile(
-        r'\b([A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,}){0,2},\s+[A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,}){0,2})\b'
-    )
-    
-    # Capturar todos los candidatos de los tres patrones
-    for match in patron_mayusculas.finditer(texto):
+    # Capturar todos los candidatos de los tres patrones precompilados
+    for match in PATRON_MAYUSCULAS.finditer(texto):
         candidatos_regex.append({
             "texto": match.group(1),
             "start": match.start(),
@@ -297,7 +295,7 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
             "tipo_patron": "mayusculas"
         })
     
-    for match in patron_mixto.finditer(texto):
+    for match in PATRON_MIXTO.finditer(texto):
         candidatos_regex.append({
             "texto": match.group(1),
             "start": match.start(),
@@ -305,7 +303,7 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
             "tipo_patron": "mixto"
         })
     
-    for match in patron_coma.finditer(texto):
+    for match in PATRON_COMA.finditer(texto):
         candidatos_regex.append({
             "texto": match.group(1),
             "start": match.start(),
@@ -318,27 +316,17 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
     for i, cand in enumerate(candidatos_regex[:15], 1):  # Mostrar máximo 15
         print(f"  {i}. '{cand['texto']}' (tipo: {cand['tipo_patron']}, pos: {cand['start']}-{cand['end']})")
     
-    # ========== FASE 2: VALIDAR CANDIDATOS CON SPACY ==========
+    # FASE 2: Validar candidatos con spaCy
     print("\n[DEBUG] ===== FASE 2: VALIDACIÓN CON SPACY =====")
-    
     print(f"[DEBUG] spaCy procesará {len(texto)} caracteres de texto")
-    # Mostrar un resumen y también el texto completo normalizado que se le pasa a spaCy
-    if len(texto) > 200:
-        print(f"[DEBUG] Primeros 200 caracteres: {texto[:200]}...")
-    else:
-        print(f"[DEBUG] Texto completo (<=200 chars): {texto}")
     
-    # El doc ya fue procesado por el llamador, usar sus entidades
-
-    # Crear conjunto de spans validados por spaCy (entidades PER/PERSON)
     spans_validados = set()
     entidades_per_detectadas = []
     for ent in doc.ents:
         if ent.label_ in ("PER", "PERSON"):
             spans_validados.add((ent.start_char, ent.end_char))
             entidades_per_detectadas.append(ent.text)
-
-    # Debug: Mostrar cuántas entidades PER detectó spaCy
+    
     print(f"[DEBUG] spaCy detectó {len(entidades_per_detectadas)} entidades PER: {entidades_per_detectadas}")
 
     
@@ -350,43 +338,21 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         end_pos = candidato["end"]
         tipo_patron = candidato["tipo_patron"]
 
-        # Limpiar puntuación del nombre
-        # Si es tipo "coma" (formato judicial), eliminar la coma y normalizar
-        if tipo_patron == "coma":
-            # "CARBALLO, MARTA" → "CARBALLO MARTA"
-            nombre_limpio_temp = re.sub(r',', ' ', nombre_raw)
-            nombre_limpio_temp = re.sub(r'\s+', ' ', nombre_limpio_temp).strip()
-        else:
-            # Para otros patrones, solo limpiar puntos
-            nombre_limpio_temp = re.sub(r'\.', ' ', nombre_raw)
-            nombre_limpio_temp = re.sub(r'\s+', ' ', nombre_limpio_temp).strip()
-
-        # NO eliminamos stop-words del nombre, solo las usamos para validar contexto
-        tokens = nombre_limpio_temp.split()
-
-        # Filtrar tokens que sean stop-words SOLO si están al inicio o final
-        while tokens and tokens[0].lower() in STOP_WORDS:
-            tokens.pop(0)
-        while tokens and tokens[-1].lower() in STOP_WORDS:
-            tokens.pop()
+        # Limpiar y normalizar usando función auxiliar
+        tokens, nombre_limpio = _limpiar_y_normalizar_nombre(nombre_raw, tipo_patron)
 
         # VALIDACIÓN ESTRICTA: mínimo 2, máximo 5 palabras
         if len(tokens) < 2:
-            print(f"  ❌ '{nombre_raw}' rechazado: menos de 2 palabras ({len(tokens)})")
+            print(f"  ❌ '{nombre_raw}' rechazado: menos de 2 palabras")
             continue
         
         if len(tokens) > 5:
-            print(f"  ❌ '{nombre_raw}' rechazado: más de 5 palabras ({len(tokens)} palabras)")
+            print(f"  ❌ '{nombre_raw}' rechazado: más de 5 palabras")
             continue
-
-        # Normalizar nombre final
-        nombre_limpio = ' '.join(tokens)
-        if tipo_patron == 'mayusculas':
-            nombre_limpio = nombre_limpio.title()
 
         # Validar que todos los tokens tengan al menos 2 caracteres
         if not _tiene_tokens_validos(nombre_limpio, min_longitud=2):
-            print(f"  ❌ '{nombre_raw}' rechazado: contiene tokens de 1 carácter (ej: 'S E N T E N')")
+            print(f"  ❌ '{nombre_raw}' rechazado: contiene tokens de 1 carácter")
             continue
 
         # Evitar duplicados
@@ -407,12 +373,7 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
 
         # Si no fue validado por spaCy, guardar para validar con reglas contextuales (Fase 3)
         if not validado_por_spacy:
-            ctx_start = max(0, start_pos - 70)
-            ctx_end = min(len(texto), end_pos + 70)
-            contexto_debug = texto[ctx_start:ctx_end]
-            
             print(f"  ⚠️  '{nombre_raw}' NO validado por spaCy NER → se validará con reglas contextuales")
-            print(f"     Contexto: ...{contexto_debug[:80]}...")
             
             # Guardar candidato rechazado para validación posterior con reglas
             candidatos_rechazados_spacy.append({
@@ -426,10 +387,8 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
 
         nombres_unicos.add(nombre_limpio.lower())
 
-        # Extraer contexto
-        start_ctx = max(0, start_pos - 60)
-        end_ctx = min(len(texto), end_pos + 60)
-        contexto = texto[start_ctx:end_ctx].strip()
+        # Extraer contexto usando función centralizada
+        contexto = _extraer_contexto(texto, start_pos, end_pos, window=60)
 
         nombres_encontrados.append({
             "nombre": nombre_limpio,
@@ -437,18 +396,14 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
             "posicion": start_pos
         })
 
-    # ========== FASE 3: APLICAR REGLAS CONTEXTUALES ==========
+    # FASE 3: Aplicar reglas contextuales
     print("\n[DEBUG] ===== FASE 3: DETECCIÓN CON REGLAS CONTEXTUALES =====")
     
-    # Inicializar matcher con reglas contextuales
     context_matcher = ContextualAnchorMatcher(nlp)
     context_matcher.add_default_rules()
-    
-    # Detectar nombres con reglas contextuales
     matches_contextuales = context_matcher.find_matches(doc)
-    print(f"[DEBUG] Reglas contextuales detectaron {len(matches_contextuales)} coincidencias")
     
-    # Agrupar por regla para estadísticas
+    print(f"[DEBUG] Reglas contextuales detectaron {len(matches_contextuales)} coincidencias")
     conteo_por_regla = {}
     for match in matches_contextuales:
         regla = match.get("rule", "unknown")
@@ -489,13 +444,10 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         
         # Validar que todos los tokens tengan al menos 2 caracteres
         if not _tiene_tokens_validos(nombre_limpio, min_longitud=2):
-            print(f"  ❌ '{nombre_raw}' rechazado: contiene tokens de 1 carácter (ej: 'S E N T E N')")
+            print(f"  ❌ '{nombre_raw}' rechazado: contiene tokens de 1 carácter")
             continue
         
-        print(f"  ✅ '{nombre_raw}' detectado por {match.get('rule', 'REGLA_DESCONOCIDA')}")
-        print(f"     Ancla: {match['anchor']}")
-        print(f"     Match completo: '{match['matched_text']}'")
-        print(f"     Contexto: ...{match['context'][:60]}...")
+        print(f"  ✅ '{nombre_raw}' detectado por {match.get('rule', 'REGLA_DESCONOCIDA')} (ancla: {match['anchor']})")
         
         nombres_encontrados.append({
             "nombre": nombre_limpio,
@@ -556,10 +508,8 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
             # Agregar nombre rescatado por reglas contextuales
             nombres_unicos.add(nombre.lower())
             
-            # Extraer contexto
-            start_ctx = max(0, start_pos - 60)
-            end_ctx = min(len(texto), end_pos + 60)
-            contexto = texto[start_ctx:end_ctx].strip()
+            # Extraer contexto usando función centralizada
+            contexto = _extraer_contexto(texto, start_pos, end_pos, window=60)
             
             print(f"  ✅ '{nombre}' RESCATADO por regla contextual ({metodo_validacion})")
             
@@ -571,31 +521,26 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         else:
             print(f"  ❌ '{nombre}' rechazado definitivamente (no validado ni por spaCy ni por reglas)")
     
-    # ========== FASE 4: LIMPIEZA DE ANCLAS CONTEXTUALES ==========
+    # FASE 4: Limpieza de anclas contextuales
     print("\n[DEBUG] ===== FASE 4: LIMPIEZA DE ANCLAS CONTEXTUALES =====")
     print(f"[DEBUG] Nombres antes de limpiar anclas: {len(nombres_encontrados)}")
-    
     nombres_sin_anclas = _limpiar_anclas_de_nombres(nombres_encontrados)
-    
     print(f"[DEBUG] Nombres después de limpiar anclas: {len(nombres_sin_anclas)}")
     
-    # ========== FASE 5: DEDUPLICACIÓN INTELIGENTE ==========
-    print("\n[DEBUG] ===== FASE 5: DEDUPLICACIÓN INTELIGENTE =====")
+    # FASE 5: Deduplicación y limpieza de bordes
+    print("\n[DEBUG] ===== FASE 5: DEDUPLICACIÓN Y LIMPIEZA DE BORDES =====")
     print(f"[DEBUG] Nombres antes de deduplicación: {len(nombres_sin_anclas)}")
+    nombres_deduplicados = _eliminar_duplicados_y_subconjuntos(nombres_sin_anclas)
+    print(f"[DEBUG] Nombres después de deduplicación: {len(nombres_deduplicados)}")
     
-    nombres_limpios = _eliminar_duplicados_y_subconjuntos(nombres_sin_anclas)
+    nombres_limpios = _limpiar_bordes_de_nombres(nombres_deduplicados)
+    print(f"[DEBUG] Nombres después de limpiar bordes: {len(nombres_limpios)}")
     
-    print(f"[DEBUG] Nombres después de deduplicación: {len(nombres_limpios)}")
-    print(f"[DEBUG] Nombres eliminados: {len(nombres_sin_anclas) - len(nombres_limpios)}")
-    
-    # ========== FASE 6: FILTRAR PALABRAS NO-NOMBRES ==========
+    # FASE 6: Filtrar palabras no-nombres
     print("\n[DEBUG] ===== FASE 6: FILTRO DE PALABRAS NO-NOMBRES =====")
     print(f"[DEBUG] Nombres antes de filtrar palabras: {len(nombres_limpios)}")
-    
     nombres_finales = _filtrar_palabras_no_nombres(nombres_limpios)
-    
     print(f"[DEBUG] Nombres después de filtrar palabras: {len(nombres_finales)}")
-    print(f"[DEBUG] Nombres eliminados: {len(nombres_limpios) - len(nombres_finales)}")
     
     # Debug: Resumen final
     print(f"\n[DEBUG] ===== RESUMEN FINAL =====")
@@ -662,27 +607,24 @@ def _filtrar_palabras_no_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str
 
 def _limpiar_anclas_de_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Limpia las ANCLAS_CONTEXTUALES de los nombres detectados y preposiciones/conjunciones en los bordes.
+    FASE 4: Limpia las ANCLAS_CONTEXTUALES de los nombres detectados.
     
-    Proceso de limpieza en dos pasos:
-    1. Elimina palabras-cue contextuales ("señor", "doctor", "dni", etc.)
-    2. Elimina preposiciones/conjunciones en los bordes ("del", "de", "y", "e", etc.)
+    Proceso:
+    - Elimina palabras-cue contextuales ("señor", "doctor", "dni", etc.)
+    - NO elimina preposiciones en bordes (eso se hace en Fase 5 después de deduplicación)
     
     Ejemplos:
         "Señor Juez Vanina Marisol Garcia Dni" → "Vanina Marisol Garcia"
         "Doctor Carlos Pérez" → "Carlos Pérez"
         "Sr Juan García DNI" → "Juan García"
-        "Del Rene Antonio Quer" → "Rene Antonio Quer"
-        "Y Bianca Giovanna Muller" → "Bianca Giovanna Muller"
-        "Maria De Los Angeles Y" → "Maria De Los Angeles"
     
     Args:
         nombres: Lista de diccionarios con 'nombre', 'contexto', 'posicion'
         
     Returns:
-        Lista con nombres limpios (sin anclas contextuales ni preposiciones en bordes)
+        Lista con nombres limpios (sin anclas contextuales)
     """
-    from funcs.nlp_extractors.constantes import ANCLAS_CONTEXTUALES, limpiar_bordes_nombre
+    from funcs.nlp_extractors.constantes import ANCLAS_CONTEXTUALES
     
     nombres_limpios = []
     
@@ -690,7 +632,7 @@ def _limpiar_anclas_de_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, 
         nombre_original = item['nombre']
         tokens = nombre_original.split()
         
-        # PASO 1: Filtrar tokens que sean anclas contextuales (comparación case-insensitive)
+        # Filtrar tokens que sean anclas contextuales (comparación case-insensitive)
         tokens_limpios = []
         for token in tokens:
             token_lower = token.lower()
@@ -704,14 +646,56 @@ def _limpiar_anclas_de_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, 
         # Reconstruir nombre sin anclas
         nombre_sin_anclas = ' '.join(tokens_limpios).strip()
         
-        # PASO 2: Limpiar preposiciones y conjunciones del inicio/final
-        nombre_limpio = limpiar_bordes_nombre(nombre_sin_anclas)
-        
         # Validar que queden al menos 2 tokens (nombre válido)
+        tokens_finales = nombre_sin_anclas.split()
+        if len(tokens_finales) >= 2:
+            if nombre_sin_anclas != nombre_original:
+                print(f"  🧹 '{nombre_original}' → '{nombre_sin_anclas}' (anclas limpiadas)")
+            
+            nombres_limpios.append({
+                'nombre': nombre_sin_anclas,
+                'contexto': item['contexto'],
+                'posicion': item['posicion']
+            })
+        else:
+            print(f"  ❌ '{nombre_original}' descartado: menos de 2 tokens después de limpiar anclas")
+    
+    return nombres_limpios
+
+
+def _limpiar_bordes_de_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    FASE 5.2: Limpia preposiciones y conjunciones del inicio y final de nombres.
+    
+    Esta función se aplica DESPUÉS de la deduplicación para asegurar que
+    los nombres finales no tengan palabras como "en", "del", "de", "y" al inicio/final.
+    
+    Ejemplos:
+        "En Vallejos Margarita Beatriz" → "Vallejos Margarita Beatriz"
+        "Del Rene Antonio Quer" → "Rene Antonio Quer"
+        "Y Bianca Giovanna Muller" → "Bianca Giovanna Muller"
+        "Maria De Los Angeles Y" → "Maria De Los Angeles"
+        "Lopez Gonzales y Perez" → "Lopez Gonzales y Perez" (NO cambia, "y" está en medio)
+    
+    Args:
+        nombres: Lista de diccionarios con 'nombre', 'contexto', 'posicion'
+        
+    Returns:
+        Lista con nombres con bordes limpios
+    """
+    from funcs.nlp_extractors.constantes import limpiar_bordes_nombre
+    
+    nombres_limpios = []
+    
+    for item in nombres:
+        nombre_original = item['nombre']
+        nombre_limpio = limpiar_bordes_nombre(nombre_original)
+        
+        # Validar que queden al menos 2 tokens después de limpiar bordes
         tokens_finales = nombre_limpio.split()
         if len(tokens_finales) >= 2:
             if nombre_limpio != nombre_original:
-                print(f"  🧹 '{nombre_original}' → '{nombre_limpio}' (anclas y bordes limpiados)")
+                print(f"  🧹 '{nombre_original}' → '{nombre_limpio}' (bordes limpiados)")
             
             nombres_limpios.append({
                 'nombre': nombre_limpio,
@@ -719,7 +703,7 @@ def _limpiar_anclas_de_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, 
                 'posicion': item['posicion']
             })
         else:
-            print(f"  ❌ '{nombre_original}' descartado: menos de 2 tokens después de limpiar anclas y bordes")
+            print(f"  ❌ '{nombre_original}' descartado: menos de 2 tokens después de limpiar bordes")
     
     return nombres_limpios
 
@@ -935,10 +919,8 @@ def _extraer_y_validar_documento(texto: str, tipo_doc: str) -> List[Dict[str, an
         
         numeros_unicos.add(numero_limpio)
         
-        # Extraer contexto
-        start_ctx = max(0, match.start() - 60)
-        end_ctx = min(len(texto), match.end() + 60)
-        contexto = texto[start_ctx:end_ctx].strip()
+        # Extraer contexto usando función centralizada
+        contexto = _extraer_contexto(texto, match.start(), match.end(), window=60)
         
         documento = {
             "numero": numero_limpio,
