@@ -130,9 +130,9 @@ TEXTO DEL PDF
      ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  FASE 1: Captura con Regex                                  │
-│  • PATRON_MAYUSCULAS: "GARCÍA LÓPEZ"                        │
-│  • PATRON_MIXTO: "Juan Pérez"                               │
-│  • PATRON_COMA: "CARBALLO, MARTA"                           │
+│  • PATRON_MAYUSCULAS: "THIAGO LÓPEZ"                        │
+│  • PATRON_MIXTO: "Thiago Pérez"                               │
+│  • PATRON_COMA: "GONZALES, THIAGO"                           │
 └─────────────────────────────────────────────────────────────┘
      │
      ▼
@@ -164,7 +164,7 @@ TEXTO DEL PDF
 ┌─────────────────────────────────────────────────────────────┐
 │  FASE 5: Deduplicación y Limpieza de Bordes                 │
 │  • Elimina duplicados y subconjuntos                        │
-│  • Limpia preposiciones: "En Vallejos" → "Vallejos"         │
+│  • Limpia preposiciones: "En Perez" → "Perez"         │
 └─────────────────────────────────────────────────────────────┘
      │
      ▼
@@ -190,14 +190,13 @@ NOMBRES FINALES VALIDADOS
    - Formato: "C/ NOMBRE S/"
 
 4. **APELLIDO_NOMBRE_JUDICIAL**: Detecta formato Title Case judicial
-   - Patrón: 2-6 tokens en Title Case (ej: "Codazzi Luis", "Daniel Ernesto D'Avis")
+   - Patrón: 2-6 tokens en Title Case (ej: "López Juan")
    - Mínimo 2 caracteres por token para evitar acrónimos
 
 5. **NOMBRE_ANTES_DE_C_BARRA**: Detecta nombres antes de "C/" (demandante en formato judicial)
    - Patrón: NOMBRE + "C/"
 
 6. **NOMBRE_JUDICIAL_CON_COMA**: Detecta formato "APELLIDO, NOMBRE" (judicial argentino)
-   - Usa regex: `([A-Z]{2,}(?:\s+[A-Z]{2,}){0,2}),\s+([A-Z]{2,}(?:\s+[A-Z]{2,}){0,2})`
 
 ### Extracción y Validación de Documentos
 
@@ -247,55 +246,6 @@ Multiplicadores: 5 4 3 2 7 6 5 4 3 2
 Productos: 10+0+3+4+21+24+25+24+21+16 = 148
 Resto: 148 % 11 = 5
 Dígito verificador: 11 - 5 = 6
-```
-
-**Ejemplo práctico completo:**
-
-Texto del PDF:
-```
-En la ciudad de Buenos Aires, se presenta el ciudadano GARCÍA LÓPEZ JUAN CARLOS 
-DNI 12345678 CUIL 20-12345678-1 en contra de PÉREZ MARTÍNEZ MARÍA FERNANDA.
-El Dr. Codazzi Luis, matrícula MP987654, representa al demandante.
-```
-
-Solicitud: `{"entidades_solicitadas": ["nombre", "dni", "cuil", "matricula"]}`
-
-Respuesta:
-```json
-{
-  "nombres": [
-    {
-      "nombre": "García López Juan Carlos",
-      "contexto": "...ciudadano GARCÍA LÓPEZ JUAN CARLOS DNI..."
-    },
-    {
-      "nombre": "Pérez Martínez María Fernanda",
-      "contexto": "...contra PÉREZ MARTÍNEZ MARÍA FERNANDA..."
-    },
-    {
-      "nombre": "Codazzi Luis",
-      "contexto": "...Dr. Codazzi Luis, matrícula..."
-    }
-  ],
-  "dni": [
-    {
-      "valor": "12345678",
-      "contexto": "...DNI 12345678 CUIL..."
-    }
-  ],
-  "cuil": [
-    {
-      "valor": "20-12345678-1",
-      "contexto": "...CUIL 20-12345678-1 en..."
-    }
-  ],
-  "matricula": [
-    {
-      "valor": "MP987654",
-      "contexto": "...matrícula MP987654, representa..."
-    }
-  ]
-}
 ```
 
 ---

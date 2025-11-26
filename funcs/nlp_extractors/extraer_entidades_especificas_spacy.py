@@ -32,7 +32,7 @@ from funcs.normalizacion.normalizar_y_extraer_texto_pdf import (
 from funcs.nlp_extractors.constantes import PATRONES_DOCUMENTOS, STOP_WORDS, PALABRAS_FILTRO_NOMBRES
 from funcs.nlp_extractors.validadores_entidades import (
     validar_dni, validar_cuil, validar_cuit, 
-    validar_cuif, validar_matricula
+    validar_cuif, validar_matricula, validar_cbu
 )
 from funcs.nlp_extractors.contextual_anchor_rules import ContextualAnchorMatcher
 
@@ -146,7 +146,7 @@ def extraer_entidades_especificas(
     entidades_solicitadas = [e.lower().strip() for e in entidades_solicitadas]
     
     # Validar entidades
-    entidades_validas = {"nombre", "nombres", "dni", "matricula", "cuif", "cuit", "cuil"}
+    entidades_validas = {"nombre", "nombres", "dni", "matricula", "cuif", "cuit", "cuil", "cbu"}
     entidades_invalidas = set(entidades_solicitadas) - entidades_validas
     if entidades_invalidas:
         raise ValueError(
@@ -166,6 +166,12 @@ def extraer_entidades_especificas(
     print("[DEBUG] Extrayendo texto NORMALIZADO del PDF (usado para todo)...")
     texto_normalizado = normalizacion_avanzada_pdf(path_pdf=path_pdf)
     print(f"[DEBUG] Texto NORMALIZADO extraído: {len(texto_normalizado)} caracteres")
+    
+    # Imprimir el texto normalizado completo SIEMPRE (independiente de las entidades solicitadas)
+    print("[DEBUG] --- TEXTO NORMALIZADO COMPLETO (INICIO) ---")
+    print(texto_normalizado)
+    print("[DEBUG] --- TEXTO NORMALIZADO COMPLETO (FIN) ---")
+    
     # Reutilizar texto_normalizado como texto_crudo para spaCy
     texto_crudo = texto_normalizado
 
@@ -182,12 +188,8 @@ def extraer_entidades_especificas(
         debe_procesar_spacy = _VIS_DISPONIBLE and is_visualization_enabled()
 
     if debe_procesar_spacy:
-        print("[DEBUG] Procesando texto CRUDO con spaCy...")
+        print("[DEBUG] Procesando texto con spaCy para extracción de nombres...")
         nlp = _get_nlp()
-        # Imprimir el texto completo que se va a pasar a spaCy (delimitado)
-        print("[DEBUG] --- TEXTO COMPLETO QUE SE PASARÁ A spaCy (INICIO) ---")
-        print(texto_crudo)
-        print("[DEBUG] --- TEXTO COMPLETO QUE SE PASARÁ A spaCy (FIN) ---")
         doc = nlp(texto_crudo)  # ← SIEMPRE texto_crudo
     
     # Estructura de resultado
@@ -895,11 +897,54 @@ def _extraer_y_validar_documento(texto: str, tipo_doc: str) -> List[Dict[str, an
         "cuil": validar_cuil,
         "cuit": validar_cuit,
         "cuif": validar_cuif,
-        "matricula": validar_matricula
+        "matricula": validar_matricula,
+        "cbu": validar_cbu
     }
     
     validador = validadores.get(tipo_doc)
     
+    # Manejo especial para CBU: buscar la palabra "CBU" y luego buscar números cerca
+    if tipo_doc == "cbu":
+        for match in regex.finditer(texto):
+            pos_cbu = match.start()
+            
+            # Definir ventana de búsqueda: 200 caracteres antes y después de "CBU"
+            ventana_inicio = max(0, pos_cbu - 200)
+            ventana_fin = min(len(texto), pos_cbu + 200)
+            ventana_texto = texto[ventana_inicio:ventana_fin]
+            
+            # Buscar secuencias de 22 dígitos (con posibles espacios internos)
+            # Patrón: 22 dígitos con espacios opcionales entre ellos
+            patron_numeros = r'\b(\d(?:\s?\d){20,21})\b'
+            
+            for num_match in re.finditer(patron_numeros, ventana_texto):
+                numero_capturado = num_match.group(1)
+                numero_limpio = re.sub(r'\D', '', numero_capturado)
+                
+                # Validar que tenga exactamente 22 dígitos
+                if not validar_cbu(numero_limpio):
+                    continue
+                
+                # Evitar duplicados
+                if numero_limpio in numeros_unicos:
+                    continue
+                
+                numeros_unicos.add(numero_limpio)
+                
+                # Extraer contexto desde la posición real en el texto original
+                pos_real = ventana_inicio + num_match.start()
+                contexto = _extraer_contexto(texto, pos_real, pos_real + len(numero_capturado), window=60)
+                
+                documento = {
+                    "numero": numero_limpio,
+                    "contexto": contexto
+                }
+                
+                documentos_encontrados.append(documento)
+        
+        return documentos_encontrados
+    
+    # Para otros documentos, usar el flujo normal
     for match in regex.finditer(texto):
         numero = match.group(1)
         
@@ -945,7 +990,7 @@ def validar_entidades_solicitadas(entidades: List[str]) -> tuple[bool, Optional[
     if not entidades or len(entidades) == 0:
         return False, "Debe especificar al menos una entidad a extraer"
     
-    entidades_validas = {"nombre", "nombres", "dni", "matricula", "cuif", "cuit", "cuil"}
+    entidades_validas = {"nombre", "nombres", "dni", "matricula", "cuif", "cuit", "cuil", "cbu"}
     entidades_invalidas = set(e.lower().strip() for e in entidades) - entidades_validas
     
     if entidades_invalidas:
@@ -953,6 +998,7 @@ def validar_entidades_solicitadas(entidades: List[str]) -> tuple[bool, Optional[
             f"Entidades no válidas: {', '.join(entidades_invalidas)}. "
             f"Entidades válidas: nombre (personas), dni (7-8 dígitos), "
             f"matricula (alfanumérico 1-10 chars), cuif (1-10 dígitos), "
+            f"cbu (22 dígitos), "
             f"cuit (11 dígitos, prefijos 20-27/30/33-34), cuil (11 dígitos, prefijos 20/23-24/27)"
         )
     return True, None

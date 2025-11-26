@@ -12,12 +12,14 @@ PATRONES_DOCUMENTOS = {
     "CUIF": r'\bCUIF\s+([\d]+)\b',
     "CUIT": r'\bCUIT\s+([\d\s]+?)(?=\s*[^\d]|$)',
     "CUIL": r'\bCUIL\s+([\d\s]+?)(?=\s*[^\d]|$)',
+    # CBU: Patrón simple para encontrar la palabra CBU (se procesará manualmente en el código)
+    "CBU": r'\bCBU\b',
 }
 
 # Stop-words para filtrar nombres
 STOP_WORDS = {
     # Documentos / etiquetas
-    "dni", "matricula", "mp", "cuif", "cuit", "cuil",
+    "dni", "matricula", "mp", "cuif", "cuit", "cuil", "cbu",
     
     # Tratamientos y títulos
     "señor", "señora", "sr", "sra", "srta", "juez", "jueza",
@@ -43,7 +45,7 @@ ANCLAS_CONTEXTUALES_DERECHA = [
 # Anclas contextuales - Nombres a la IZQUIERDA del ancla
 ANCLAS_CONTEXTUALES_IZQUIERDA = [
     # Documentos de identidad (indican que el nombre está cerca)
-    "dni", "cuil", "cuit", "cuif", "matricula", "matrícula"
+    "dni", "cuil", "cuit", "cuif", "matricula", "matrícula", "cbu"
 ]
 
 # Unión de ambas listas para uso en limpieza (Fase 4)

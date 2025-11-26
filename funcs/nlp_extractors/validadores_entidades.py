@@ -77,6 +77,17 @@ def validar_matricula(codigo: str) -> bool:
     return 1 <= len(codigo_limpio) <= 10 and codigo_limpio.isalnum()
 
 
+def validar_cbu(numero: str) -> bool:
+    """
+    Valida formato de CBU (Clave Bancaria Uniforme) argentino.
+    - Solo números
+    - Longitud: 22 dígitos exactos
+    - Uso: cuentas bancarias tradicionales (transferencias bancarias)
+    """
+    numero_limpio = re.sub(r'\D', '', numero)
+    return len(numero_limpio) == 22 and numero_limpio.isdigit()
+
+
 def _validar_digito_verificador(numero: str) -> bool:
     """
     Valida el dígito verificador de CUIT/CUIL usando módulo 11.

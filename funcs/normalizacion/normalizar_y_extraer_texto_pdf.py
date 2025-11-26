@@ -124,14 +124,20 @@ def normalizacion_avanzada_pdf(path_pdf: str = None, raw_text: str = None) -> st
     texto = re.sub(r'\bC[\W_]*U[\W_]*I[\W_]*L[\W_\.]*\b', 'CUIL ', texto, flags=re.IGNORECASE)
     texto = re.sub(r'\bC[\W_]*U[\W_]*I[\W_]*F[\W_\.]*\b', 'CUIF ', texto, flags=re.IGNORECASE)
 
+    # 2.5.1) Detectar "Clave Bancaria Uniforme" → "CBU"
+    texto = re.sub(r'\bClave\s+Bancaria\s+Uniforme\b', 'CBU', texto, flags=re.IGNORECASE)
+
+    # 2.5.2) Detectar variantes con puntos, guiones o espacios en C.B.U (con o sin punto final)
+    texto = re.sub(r'\bC[\W_]*B[\W_]*U[\W_\.]*\b', 'CBU ', texto, flags=re.IGNORECASE)
+
     # 2.6) Detectar “Matrícula” con o sin acento → “MATRICULA”
     texto = re.sub(r'\bMatr[ií]cula\b', 'MATRICULA', texto, flags=re.IGNORECASE)
 
     # 2.7) Variantes de “M.P.”, “M-P-”, “MP” con puntos/guiones/espacios entre letras → “MATRICULA”
     texto = re.sub(r'\bM[\W_]*P\b', 'MATRICULA', texto, flags=re.IGNORECASE)
 
-    # 2.8) Detecta "DNI-", "MATRICULA-", "MATRICULA.", "CUIT-", "CUIL-", "CUIF-" con o sin espacios o guiones especiales
-    texto = re.sub(r'\b(DNI|MATRICULA|CUIT|CUIL|CUIF)\s*[-–—\.]\s*', r'\1 ', texto, flags=re.IGNORECASE)
+    # 2.8) Detecta "DNI-", "MATRICULA-", "MATRICULA.", "CUIT-", "CUIL-", "CUIF-", "CBU-" con o sin espacios o guiones especiales
+    texto = re.sub(r'\b(DNI|MATRICULA|CUIT|CUIL|CUIF|CBU)\s*[-–—\.]\s*', r'\1 ', texto, flags=re.IGNORECASE)
 
     # 3) Eliminar 'N°', 'Nº', 'N%', 'N”', 'N*' (y variantes con ., : o espacios antes del número)
     texto = re.sub(r'\bN[º°%”*]?[.:,\s-]*\s*(?=\d)', '', texto)
@@ -160,10 +166,10 @@ def normalizacion_avanzada_pdf(path_pdf: str = None, raw_text: str = None) -> st
     texto = eliminar_puntos_antes_de_cuit(texto)
 
     # 8) Asegurar siempre un espacio entre etiqueta y número
-    texto = re.sub(r'\b(DNI|MATRICULA)[^\w]*(\d+)\b', r'\1 \2', texto, flags=re.IGNORECASE)
+    texto = re.sub(r'\b(DNI|MATRICULA|CBU)[^\w]*(\d+)\b', r'\1 \2', texto, flags=re.IGNORECASE)
     
     # 9) Eliminar ruido entre etiquetas y sus números. Cubre casos como: CUIT NS 20321777636 → CUIT 20321777636
-    texto = re.sub(r'\b(DNI|MATRICULA|CUIT|CUIL|CUIF)\b[^\d\n]{0,10}?(?:\d+[a-z]{1,3}\.?|[a-z]{1,5}\.?)?\s*(?=\d{4,})', r'\1 ', texto, flags=re.IGNORECASE)
+    texto = re.sub(r'\b(DNI|MATRICULA|CUIT|CUIL|CUIF|CBU)\b[^\d\n]{0,10}?(?:\d+[a-z]{1,3}\.?|[a-z]{1,5}\.?)?\s*(?=\d{4,})', r'\1 ', texto, flags=re.IGNORECASE)
 
     # 10) Colapsar cualquier whitespace a un solo espacio y recortar
     texto = re.sub(r'\s+', ' ', texto).strip()
