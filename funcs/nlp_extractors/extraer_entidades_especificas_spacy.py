@@ -163,14 +163,14 @@ def extraer_entidades_especificas(
     # Extraer texto NORMALIZADO para todo el flujo (no se usa extraer_texto_crudo_pdf)
     # Usamos el texto normalizado tanto para la extracción de documentos como
     # para el procesamiento con spaCy (si corresponde).
-    print("[DEBUG] Extrayendo texto NORMALIZADO del PDF (usado para todo)...")
+    # print("[DEBUG] Extrayendo texto NORMALIZADO del PDF (usado para todo)...")
     texto_normalizado = normalizacion_avanzada_pdf(path_pdf=path_pdf)
-    print(f"[DEBUG] Texto NORMALIZADO extraído: {len(texto_normalizado)} caracteres")
+    # print(f"[DEBUG] Texto NORMALIZADO extraído: {len(texto_normalizado)} caracteres")
     
     # Imprimir el texto normalizado completo SIEMPRE (independiente de las entidades solicitadas)
-    print("[DEBUG] --- TEXTO NORMALIZADO COMPLETO (INICIO) ---")
-    print(texto_normalizado)
-    print("[DEBUG] --- TEXTO NORMALIZADO COMPLETO (FIN) ---")
+    # print("[DEBUG] --- TEXTO NORMALIZADO COMPLETO (INICIO) ---")
+    # print(texto_normalizado)
+    # print("[DEBUG] --- TEXTO NORMALIZADO COMPLETO (FIN) ---")
     
     # Reutilizar texto_normalizado como texto_crudo para spaCy
     texto_crudo = texto_normalizado
@@ -188,7 +188,7 @@ def extraer_entidades_especificas(
         debe_procesar_spacy = _VIS_DISPONIBLE and is_visualization_enabled()
 
     if debe_procesar_spacy:
-        print("[DEBUG] Procesando texto con spaCy para extracción de nombres...")
+        # print("[DEBUG] Procesando texto con spaCy para extracción de nombres...")
         nlp = _get_nlp()
         doc = nlp(texto_crudo)  # ← SIEMPRE texto_crudo
     
@@ -197,9 +197,9 @@ def extraer_entidades_especificas(
     
     # Extracción de nombres (usa texto crudo)
     if "nombre" in entidades_solicitadas:
-        print("[DEBUG] Extrayendo NOMBRES con texto CRUDO...")
+        # print("[DEBUG] Extrayendo NOMBRES con texto CRUDO...")
         resultado["nombres"] = _extraer_nombres_con_contexto(texto_crudo, doc=doc)
-        print(f"[DEBUG] Nombres encontrados: {len(resultado['nombres'])}")
+        # print(f"[DEBUG] Nombres encontrados: {len(resultado['nombres'])}")
     
     # Extracción de documentos (usa texto normalizado)
     for entidad in entidades_solicitadas:
@@ -208,12 +208,12 @@ def extraer_entidades_especificas(
             
         entidad_key = entidad.upper()
         if entidad_key in PATRONES_DOCUMENTOS:
-            print(f"[DEBUG] Extrayendo {entidad_key} con texto NORMALIZADO...")
+            # print(f"[DEBUG] Extrayendo {entidad_key} con texto NORMALIZADO...")
             resultado[entidad] = _extraer_y_validar_documento(
                 texto_normalizado,  # ← TEXTO NORMALIZADO
                 entidad
             )
-            print(f"[DEBUG] {entidad_key} encontrados: {len(resultado[entidad])}")
+            # print(f"[DEBUG] {entidad_key} encontrados: {len(resultado[entidad])}")
 
     # Generar visualización: respetar parámetro explícito si se pasó, sino usar config global
     debe_visualizar = False
@@ -224,7 +224,7 @@ def extraer_entidades_especificas(
     
     if debe_visualizar and doc is not None:
         # Generar visualización pero NO incluir el HTML ni rutas en la respuesta API
-        print("[DEBUG] Generando visualización con displaCy (no incluida en la respuesta)...")
+        # print("[DEBUG] Generando visualización con displaCy (no incluida en la respuesta)...")
         try:
             # Llamamos al render y guardado si corresponde, pero descartamos el resultado
             _ = render_and_maybe_save(
@@ -237,7 +237,8 @@ def extraer_entidades_especificas(
             )
         except Exception as e:
             # No queremos que un fallo de visualización afecte la respuesta principal
-            print(f"[DEBUG] Error al generar visualización (se ignorará): {e}")
+            # print(f"[DEBUG] Error al generar visualización (se ignorará): {e}")
+            pass
 
     return resultado
 
@@ -286,7 +287,7 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
     candidatos_rechazados_spacy = []  # Almacena candidatos rechazados por spaCy para validar con reglas
     
     # ========== FASE 1: CAPTURAR CANDIDATOS CON REGEX ==========
-    print("\n[DEBUG] ===== FASE 1: CAPTURA DE CANDIDATOS CON REGEX =====")
+    # print("\n[DEBUG] ===== FASE 1: CAPTURA DE CANDIDATOS CON REGEX =====")
     
     # Capturar todos los candidatos de los tres patrones precompilados
     for match in PATRON_MAYUSCULAS.finditer(texto):
@@ -314,13 +315,14 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         })
     
     # Debug: Mostrar candidatos capturados por regex
-    print(f"[DEBUG] Regex capturó {len(candidatos_regex)} candidatos:")
+    # print(f"[DEBUG] Regex capturó {len(candidatos_regex)} candidatos:")
     for i, cand in enumerate(candidatos_regex[:15], 1):  # Mostrar máximo 15
-        print(f"  {i}. '{cand['texto']}' (tipo: {cand['tipo_patron']}, pos: {cand['start']}-{cand['end']})")
+        # print(f"  {i}. '{cand['texto']}' (tipo: {cand['tipo_patron']}, pos: {cand['start']}-{cand['end']})")
+        pass
     
     # FASE 2: Validar candidatos con spaCy
-    print("\n[DEBUG] ===== FASE 2: VALIDACIÓN CON SPACY =====")
-    print(f"[DEBUG] spaCy procesará {len(texto)} caracteres de texto")
+    # print("\n[DEBUG] ===== FASE 2: VALIDACIÓN CON SPACY =====")
+    # print(f"[DEBUG] spaCy procesará {len(texto)} caracteres de texto")
     
     spans_validados = set()
     entidades_per_detectadas = []
@@ -329,11 +331,11 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
             spans_validados.add((ent.start_char, ent.end_char))
             entidades_per_detectadas.append(ent.text)
     
-    print(f"[DEBUG] spaCy detectó {len(entidades_per_detectadas)} entidades PER: {entidades_per_detectadas}")
+    # print(f"[DEBUG] spaCy detectó {len(entidades_per_detectadas)} entidades PER: {entidades_per_detectadas}")
 
     
     # Procesar cada candidato regex
-    print(f"\n[DEBUG] Procesando candidatos regex...")
+    # print(f"\n[DEBUG] Procesando candidatos regex...")
     for candidato in candidatos_regex:
         nombre_raw = candidato["texto"]
         start_pos = candidato["start"]
@@ -345,21 +347,21 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
 
         # VALIDACIÓN ESTRICTA: mínimo 2, máximo 5 palabras
         if len(tokens) < 2:
-            print(f"  ❌ '{nombre_raw}' rechazado: menos de 2 palabras")
+            # print(f"  ❌ '{nombre_raw}' rechazado: menos de 2 palabras")
             continue
         
         if len(tokens) > 5:
-            print(f"  ❌ '{nombre_raw}' rechazado: más de 5 palabras")
+            # print(f"  ❌ '{nombre_raw}' rechazado: más de 5 palabras")
             continue
 
         # Validar que todos los tokens tengan al menos 2 caracteres
         if not _tiene_tokens_validos(nombre_limpio, min_longitud=2):
-            print(f"  ❌ '{nombre_raw}' rechazado: contiene tokens de 1 carácter")
+            # print(f"  ❌ '{nombre_raw}' rechazado: contiene tokens de 1 carácter")
             continue
 
         # Evitar duplicados
         if nombre_limpio.lower() in nombres_unicos:
-            print(f"  ❌ '{nombre_raw}' rechazado: duplicado")
+            # print(f"  ❌ '{nombre_raw}' rechazado: duplicado")
             continue
 
         # ========== VALIDACIÓN CON SPACY ==========
@@ -375,7 +377,7 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
 
         # Si no fue validado por spaCy, guardar para validar con reglas contextuales (Fase 3)
         if not validado_por_spacy:
-            print(f"  ⚠️  '{nombre_raw}' NO validado por spaCy NER → se validará con reglas contextuales")
+            # print(f"  ⚠️  '{nombre_raw}' NO validado por spaCy NER → se validará con reglas contextuales")
             
             # Guardar candidato rechazado para validación posterior con reglas
             candidatos_rechazados_spacy.append({
@@ -385,7 +387,8 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
             })
             continue
         else:
-            print(f"  ✅ '{nombre_raw}' validado por SPACY (span: {span_coincidente})")
+            # print(f"  ✅ '{nombre_raw}' validado por SPACY (span: {span_coincidente})")
+            pass
 
         nombres_unicos.add(nombre_limpio.lower())
 
@@ -399,21 +402,22 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         })
 
     # FASE 3: Aplicar reglas contextuales
-    print("\n[DEBUG] ===== FASE 3: DETECCIÓN CON REGLAS CONTEXTUALES =====")
+    # print("\n[DEBUG] ===== FASE 3: DETECCIÓN CON REGLAS CONTEXTUALES =====")
     
     context_matcher = ContextualAnchorMatcher(nlp)
     context_matcher.add_default_rules()
     matches_contextuales = context_matcher.find_matches(doc)
     
-    print(f"[DEBUG] Reglas contextuales detectaron {len(matches_contextuales)} coincidencias")
+    # print(f"[DEBUG] Reglas contextuales detectaron {len(matches_contextuales)} coincidencias")
     conteo_por_regla = {}
     for match in matches_contextuales:
         regla = match.get("rule", "unknown")
         conteo_por_regla[regla] = conteo_por_regla.get(regla, 0) + 1
     
-    print(f"[DEBUG] Desglose por regla:")
+    # print(f"[DEBUG] Desglose por regla:")
     for regla, count in conteo_por_regla.items():
-        print(f"  - {regla}: {count} coincidencias")
+        # print(f"  - {regla}: {count} coincidencias")
+        pass
     
     # Crear conjuntos para validación de candidatos rechazados
     spans_reglas_contextuales = set()
@@ -438,7 +442,7 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         
         # Verificar si ya fue agregado
         if nombre_limpio.lower() in nombres_unicos:
-            print(f"  ⚠️  '{nombre_raw}' (regla: {match.get('rule', 'unknown')}, ancla: {match['anchor']}) ya detectado previamente")
+            # print(f"  ⚠️  '{nombre_raw}' (regla: {match.get('rule', 'unknown')}, ancla: {match['anchor']}) ya detectado previamente")
             continue
         
         # Agregar nombre detectado por regla contextual
@@ -446,10 +450,10 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         
         # Validar que todos los tokens tengan al menos 2 caracteres
         if not _tiene_tokens_validos(nombre_limpio, min_longitud=2):
-            print(f"  ❌ '{nombre_raw}' rechazado: contiene tokens de 1 carácter")
+            # print(f"  ❌ '{nombre_raw}' rechazado: contiene tokens de 1 carácter")
             continue
         
-        print(f"  ✅ '{nombre_raw}' detectado por {match.get('rule', 'REGLA_DESCONOCIDA')} (ancla: {match['anchor']})")
+        # print(f"  ✅ '{nombre_raw}' detectado por {match.get('rule', 'REGLA_DESCONOCIDA')} (ancla: {match['anchor']})")
         
         nombres_encontrados.append({
             "nombre": nombre_limpio,
@@ -458,7 +462,7 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         })
     
     # ========== VALIDAR CANDIDATOS RECHAZADOS POR SPACY CON REGLAS CONTEXTUALES ==========
-    print(f"\n[DEBUG] Validando {len(candidatos_rechazados_spacy)} candidatos rechazados por spaCy...")
+    # print(f"\n[DEBUG] Validando {len(candidatos_rechazados_spacy)} candidatos rechazados por spaCy...")
     
     for candidato in candidatos_rechazados_spacy:
         nombre = candidato["nombre"]
@@ -499,12 +503,12 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
         if validado_por_regla:
             # Validar que todos los tokens tengan al menos 2 caracteres
             if not _tiene_tokens_validos(nombre, min_longitud=2):
-                print(f"  ❌ '{nombre}' rechazado: contiene tokens de 1 carácter (ej: 'S E N T E N')")
+                # print(f"  ❌ '{nombre}' rechazado: contiene tokens de 1 carácter (ej: 'S E N T E N')")
                 continue
             
             # Verificar si ya fue agregado
             if nombre.lower() in nombres_unicos:
-                print(f"  ⚠️  '{nombre}' ya fue agregado por las reglas contextuales")
+                # print(f"  ⚠️  '{nombre}' ya fue agregado por las reglas contextuales")
                 continue
             
             # Agregar nombre rescatado por reglas contextuales
@@ -513,7 +517,7 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
             # Extraer contexto usando función centralizada
             contexto = _extraer_contexto(texto, start_pos, end_pos, window=60)
             
-            print(f"  ✅ '{nombre}' RESCATADO por regla contextual ({metodo_validacion})")
+            # print(f"  ✅ '{nombre}' RESCATADO por regla contextual ({metodo_validacion})")
             
             nombres_encontrados.append({
                 "nombre": nombre,
@@ -521,39 +525,40 @@ def _extraer_nombres_con_contexto(texto: str, doc=None) -> List[Dict[str, Any]]:
                 "posicion": start_pos
             })
         else:
-            print(f"  ❌ '{nombre}' rechazado definitivamente (no validado ni por spaCy ni por reglas)")
+            # print(f"  ❌ '{nombre}' rechazado definitivamente (no validado ni por spaCy ni por reglas)")
+            pass
     
     # FASE 4: Limpieza de anclas contextuales
-    print("\n[DEBUG] ===== FASE 4: LIMPIEZA DE ANCLAS CONTEXTUALES =====")
-    print(f"[DEBUG] Nombres antes de limpiar anclas: {len(nombres_encontrados)}")
+    # print("\n[DEBUG] ===== FASE 4: LIMPIEZA DE ANCLAS CONTEXTUALES =====")
+    # print(f"[DEBUG] Nombres antes de limpiar anclas: {len(nombres_encontrados)}")
     nombres_sin_anclas = _limpiar_anclas_de_nombres(nombres_encontrados)
-    print(f"[DEBUG] Nombres después de limpiar anclas: {len(nombres_sin_anclas)}")
+    # print(f"[DEBUG] Nombres después de limpiar anclas: {len(nombres_sin_anclas)}")
     
     # FASE 5: Deduplicación y limpieza de bordes
-    print("\n[DEBUG] ===== FASE 5: DEDUPLICACIÓN Y LIMPIEZA DE BORDES =====")
-    print(f"[DEBUG] Nombres antes de deduplicación: {len(nombres_sin_anclas)}")
+    # print("\n[DEBUG] ===== FASE 5: DEDUPLICACIÓN Y LIMPIEZA DE BORDES =====")
+    # print(f"[DEBUG] Nombres antes de deduplicación: {len(nombres_sin_anclas)}")
     nombres_deduplicados = _eliminar_duplicados_y_subconjuntos(nombres_sin_anclas)
-    print(f"[DEBUG] Nombres después de deduplicación: {len(nombres_deduplicados)}")
+    # print(f"[DEBUG] Nombres después de deduplicación: {len(nombres_deduplicados)}")
     
     nombres_limpios = _limpiar_bordes_de_nombres(nombres_deduplicados)
-    print(f"[DEBUG] Nombres después de limpiar bordes: {len(nombres_limpios)}")
+    # print(f"[DEBUG] Nombres después de limpiar bordes: {len(nombres_limpios)}")
     
     # FASE 6: Filtrar palabras no-nombres
-    print("\n[DEBUG] ===== FASE 6: FILTRO DE PALABRAS NO-NOMBRES =====")
-    print(f"[DEBUG] Nombres antes de filtrar palabras: {len(nombres_limpios)}")
+    # print("\n[DEBUG] ===== FASE 6: FILTRO DE PALABRAS NO-NOMBRES =====")
+    # print(f"[DEBUG] Nombres antes de filtrar palabras: {len(nombres_limpios)}")
     nombres_finales = _filtrar_palabras_no_nombres(nombres_limpios)
-    print(f"[DEBUG] Nombres después de filtrar palabras: {len(nombres_finales)}")
+    # print(f"[DEBUG] Nombres después de filtrar palabras: {len(nombres_finales)}")
     
     # Debug: Resumen final
-    print(f"\n[DEBUG] ===== RESUMEN FINAL =====")
-    print(f"  - Fase 1 - Candidatos regex capturados: {len(candidatos_regex)}")
-    print(f"  - Fase 3 - Detectados por reglas contextuales: {len(matches_contextuales)}")
-    print(f"  - Fase 4 - Nombres después de limpiar anclas: {len(nombres_sin_anclas)}")
-    print(f"  - Fase 5 - Nombres después de deduplicación: {len(nombres_limpios)}")
-    print(f"  - Fase 6 - Nombres después de filtrar palabras: {len(nombres_finales)}")
-    print(f"  - TOTAL nombres únicos finales: {len(nombres_finales)}")
+    # print(f"\n[DEBUG] ===== RESUMEN FINAL =====")
+    # print(f"  - Fase 1 - Candidatos regex capturados: {len(candidatos_regex)}")
+    # print(f"  - Fase 3 - Detectados por reglas contextuales: {len(matches_contextuales)}")
+    # print(f"  - Fase 4 - Nombres después de limpiar anclas: {len(nombres_sin_anclas)}")
+    # print(f"  - Fase 5 - Nombres después de deduplicación: {len(nombres_limpios)}")
+    # print(f"  - Fase 6 - Nombres después de filtrar palabras: {len(nombres_finales)}")
+    # print(f"  - TOTAL nombres únicos finales: {len(nombres_finales)}")
     lista_nombres_finales = [n['nombre'] for n in nombres_finales]
-    print(f"  - Lista final: {lista_nombres_finales}")
+    # print(f"  - Lista final: {lista_nombres_finales}")
     
     # Ordenar por posición
     nombres_finales.sort(key=lambda x: x['posicion'])
@@ -600,7 +605,8 @@ def _filtrar_palabras_no_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str
         palabras_encontradas = [t for t in tokens_lower if t in PALABRAS_FILTRO_NOMBRES]
         
         if palabras_encontradas:
-            print(f"  ❌ '{nombre_original}' filtrado: contiene palabras no-nombre ({', '.join(palabras_encontradas)})")
+            # print(f"  ❌ '{nombre_original}' filtrado: contiene palabras no-nombre ({', '.join(palabras_encontradas)})")
+            pass
         else:
             nombres_validos.append(item)
     
@@ -652,7 +658,8 @@ def _limpiar_anclas_de_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, 
         tokens_finales = nombre_sin_anclas.split()
         if len(tokens_finales) >= 2:
             if nombre_sin_anclas != nombre_original:
-                print(f"  🧹 '{nombre_original}' → '{nombre_sin_anclas}' (anclas limpiadas)")
+                # print(f"  🧹 '{nombre_original}' → '{nombre_sin_anclas}' (anclas limpiadas)")
+                pass
             
             nombres_limpios.append({
                 'nombre': nombre_sin_anclas,
@@ -660,7 +667,8 @@ def _limpiar_anclas_de_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, 
                 'posicion': item['posicion']
             })
         else:
-            print(f"  ❌ '{nombre_original}' descartado: menos de 2 tokens después de limpiar anclas")
+            # print(f"  ❌ '{nombre_original}' descartado: menos de 2 tokens después de limpiar anclas")
+            pass
     
     return nombres_limpios
 
@@ -697,7 +705,8 @@ def _limpiar_bordes_de_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, 
         tokens_finales = nombre_limpio.split()
         if len(tokens_finales) >= 2:
             if nombre_limpio != nombre_original:
-                print(f"  🧹 '{nombre_original}' → '{nombre_limpio}' (bordes limpiados)")
+                # print(f"  🧹 '{nombre_original}' → '{nombre_limpio}' (bordes limpiados)")
+                pass
             
             nombres_limpios.append({
                 'nombre': nombre_limpio,
@@ -705,7 +714,8 @@ def _limpiar_bordes_de_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, 
                 'posicion': item['posicion']
             })
         else:
-            print(f"  ❌ '{nombre_original}' descartado: menos de 2 tokens después de limpiar bordes")
+            # print(f"  ❌ '{nombre_original}' descartado: menos de 2 tokens después de limpiar bordes")
+            pass
     
     return nombres_limpios
 
@@ -818,7 +828,7 @@ def _eliminar_duplicados_y_subconjuntos(nombres: List[Dict[str, Any]]) -> List[D
         
         # Si el nombre actual tiene palabras prohibidas, descartarlo de inmediato
         if not es_actual_valido:
-            print(f"  🗑️  '{nombre_actual}' eliminado: contiene palabras prohibidas (pre-filtro)")
+            # print(f"  🗑️  '{nombre_actual}' eliminado: contiene palabras prohibidas (pre-filtro)")
             continue
         
         # Verificar contra todos los nombres ya agregados
@@ -828,7 +838,7 @@ def _eliminar_duplicados_y_subconjuntos(nombres: List[Dict[str, Any]]) -> List[D
             # CASO 1: Duplicado con tokens en diferente orden
             # Si los conjuntos de tokens son idénticos → es duplicado
             if tokens_actual == tokens_existente:
-                print(f"  🗑️  '{nombre_actual}' eliminado: duplicado con diferente orden")
+                # print(f"  🗑️  '{nombre_actual}' eliminado: duplicado con diferente orden")
                 es_valido = False
                 break
             
@@ -836,7 +846,7 @@ def _eliminar_duplicados_y_subconjuntos(nombres: List[Dict[str, Any]]) -> List[D
             # Si el existente ya está en la lista, significa que era válido
             # Por lo tanto, el actual (más corto) debe ser eliminado
             if tokens_actual.issubset(tokens_existente):
-                print(f"  🗑️  '{nombre_actual}' eliminado: subconjunto de '{nombre_existente}'")
+                # print(f"  🗑️  '{nombre_actual}' eliminado: subconjunto de '{nombre_existente}'")
                 es_valido = False
                 break
             
@@ -846,7 +856,7 @@ def _eliminar_duplicados_y_subconjuntos(nombres: List[Dict[str, Any]]) -> List[D
             # Si el actual NO es válido, mantenemos el existente.
             # Pero ya validamos arriba que el actual es válido, así que podemos reemplazar.
             if tokens_existente.issubset(tokens_actual):
-                print(f"  🔄  '{nombre_existente}' será reemplazado por '{nombre_actual}' (versión más completa)")
+                # print(f"  🔄  '{nombre_existente}' será reemplazado por '{nombre_actual}' (versión más completa)")
                 # Eliminar el existente de las listas
                 nombres_validos.pop(idx)
                 tokens_ya_usados.pop(idx)

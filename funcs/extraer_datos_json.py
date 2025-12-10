@@ -33,4 +33,8 @@ def extraer_valores_txt(path_txt='datos.txt'):
         if not isinstance(valor, (list, dict)):
             datos[clave] = normalizar_valor(valor)
 
+    # print("\n=== VALORES DEL JSON/TXT NORMALIZADOS ===")
+    # print(json.dumps(datos, indent=2, ensure_ascii=False))
+    # print("=========================================\n")
+
     return datos

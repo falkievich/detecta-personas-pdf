@@ -1,18 +1,3 @@
-import logging
-import sys
-
-# Configuración de logging global para ver DEBUG en uvicorn/fastapi
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-# Asegurar que los módulos relevantes estén en DEBUG
-for _name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi", "starlette"):
-    logging.getLogger(_name).setLevel(logging.DEBUG)
-
-# Esto solo es para testar, Removerlo más adelante (línea 1 a la 13)
-
 """
 Inicializa la aplicación FastAPI y monta el router que expone los endpoints para la comparación de datos JSON contra PDFs.
 """
