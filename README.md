@@ -87,6 +87,7 @@ Esta función te permite **seleccionar específicamente** qué variables deseas 
 | `cuil` | 11 dígitos (AA-BBBBBBBB-C) | Prefijos 20/23/24/27 + dígito verificador (módulo 11) |
 | `cuit` | 11 dígitos (AA-BBBBBBBB-C) | Prefijos 20/23/24/27/30/33/34 + dígito verificador (módulo 11) |
 | `cuif` | 1-10 dígitos | Solo números |
+| `cbu` | 22 dígitos (Clave Bancaria Uniforme) | Longitud exacta + solo números |
 | `matricula` | 1-10 caracteres alfanuméricos | Solo letras y números |
 
 **Ejemplos de uso:**
@@ -109,7 +110,7 @@ Esta función te permite **seleccionar específicamente** qué variables deseas 
 
 // Extraer todos los identificadores (sin nombres)
 {
-  "entidades_solicitadas": ["dni", "cuil", "cuit", "cuif", "matricula"]
+  "entidades_solicitadas": ["dni", "cuil", "cuit", "cuif", "cbu", "matricula"]
 }
 
 // Extraer solo CUIL y CUIT

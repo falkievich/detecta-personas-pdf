@@ -14,11 +14,8 @@ router = APIRouter(tags=["Analizador PDF: detección de personas e identificaci�
 
 # ---------------------------------------------------------- Post - Cargar un archivo JSON y un PDF para realizar la comparación de valores
 @router.post("/upload_files", summary=(
-        "Analiza un archivo PDF para extraer personas e identificadores (DNI, CUIL, CUIT, Matrícula, etc.). "
-        "Si solo se proporciona un PDF, detecta y devuelve las personas encontradas. "
-        "Si además se adjunta un archivo .txt o .json, realiza la extracción anterior "
-        "y compara los datos del archivo adjunto con la información detectada en el PDF."
-    ))
+    "Si se adjunta un PDF, extrae personas e identificadores (DNI, CUIL, CUIT, Matrícula) sin usar un LLM. Si se adjunta .json/.txt, compara los datos."
+))
 async def compare(
     data_file: UploadFile | None = File(None, description="Archivo de datos opcional (.json, .txt)"),
     pdf_file: UploadFile | None = File(None, description="Archivo PDF (requerido)")
@@ -31,7 +28,7 @@ async def compare(
     return JSONResponse(result)
 
 # ---------------------------------------------------------- Post - Detectar Nombre+Dni o Nombre+Matrícula 
-@router.post("/detect_phrase", summary="Detectar Nombres + DNI, Matrícula, CUIL, etc; A partir de texto libre")
+@router.post("/detect_phrase", summary="Extrae nombres e identificadores (DNI, Matrícula, CUIL, etc.) desde texto libre")
 async def detect_personas(
     payload: dict = Body(..., description="JSON con { 'text': '<frase o párrafo>' }")
 ):
