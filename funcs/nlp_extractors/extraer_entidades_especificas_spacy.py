@@ -122,7 +122,8 @@ def _limpiar_y_normalizar_nombre(nombre_raw: str, tipo_patron: str) -> tuple[lis
 
 def extraer_entidades_especificas(
     entidades_solicitadas: List[str],
-    path_pdf: str,
+    path_pdf: Optional[str] = None,
+    raw_text: Optional[str] = None,
     # Parámetros de visualización: si se pasan explícitamente (True/False) se respetan;
     # si se dejan como None, se utilizará la configuración global en visualization_displacy.py
     visualizar: Optional[bool] = None,
@@ -133,14 +134,22 @@ def extraer_entidades_especificas(
     vis_save_dir: Optional[str] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
-    Extrae entidades específicas de un PDF según lo solicitado.
+    Extrae entidades específicas de un PDF o texto según lo solicitado.
     IMPORTANTE: Usa dos versiones del texto:
     - texto_crudo: para spaCy NER (nombres)
     - texto_normalizado: para documentos (DNI, CUIT, etc.)
+    
+    Args:
+        entidades_solicitadas: Lista de entidades a extraer
+        path_pdf: Ruta al archivo PDF (opcional si se proporciona raw_text)
+        raw_text: Texto plano a analizar (opcional si se proporciona path_pdf)
     """
     # Validar entrada
-    if not path_pdf:
-        raise ValueError("Se debe pasar path_pdf")
+    if not path_pdf and not raw_text:
+        raise ValueError("Se debe pasar path_pdf o raw_text")
+    
+    if path_pdf and raw_text:
+        raise ValueError("Solo se puede pasar path_pdf O raw_text, no ambos")
     
     # Normalizar entidades solicitadas
     entidades_solicitadas = [e.lower().strip() for e in entidades_solicitadas]
@@ -160,11 +169,16 @@ def extraer_entidades_especificas(
         entidades_solicitadas.remove("nombres")
     
     # ========== SEPARACIÓN DE TEXTOS ==========
-    # Extraer texto NORMALIZADO para todo el flujo (no se usa extraer_texto_crudo_pdf)
-    # Usamos el texto normalizado tanto para la extracción de documentos como
-    # para el procesamiento con spaCy (si corresponde).
-    # print("[DEBUG] Extrayendo texto NORMALIZADO del PDF (usado para todo)...")
-    texto_normalizado = normalizacion_avanzada_pdf(path_pdf=path_pdf)
+    # Extraer texto NORMALIZADO para todo el flujo
+    # print("[DEBUG] Extrayendo texto NORMALIZADO...")
+    
+    if path_pdf:
+        # Caso 1: Desde PDF
+        texto_normalizado = normalizacion_avanzada_pdf(path_pdf=path_pdf)
+    else:
+        # Caso 2: Desde texto plano
+        texto_normalizado = normalizacion_avanzada_pdf(raw_text=raw_text)
+    
     # print(f"[DEBUG] Texto NORMALIZADO extraído: {len(texto_normalizado)} caracteres")
     
     # Imprimir el texto normalizado completo SIEMPRE (independiente de las entidades solicitadas)
