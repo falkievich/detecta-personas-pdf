@@ -4,6 +4,7 @@ calcula la similitud entre cada par JSON ↔ PDF con reglas más estrictas (acen
 etiqueta por umbrales (sin lógica difusa) y agrupa en exacta, alta, media y baja.
 """
 import re
+import os
 from rapidfuzz import fuzz
 from funcs.extraer_datos_json import extraer_valores_txt
 from funcs.normalizacion.normalizar_y_extraer_texto_pdf import normalizacion_simple_pdf
@@ -31,7 +32,6 @@ def comparar_valores_json_pdf(json_path: str, source_path: str):
         return {"exacta": [], "alta": [], "media": [], "baja": []}
 
     # Detectar si el archivo fuente es TXT o PDF por su extensión
-    import os
     ext = os.path.splitext(source_path)[1].lower()
     
     if ext == '.txt':

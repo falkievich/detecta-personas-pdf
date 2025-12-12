@@ -4,8 +4,21 @@ Soporta extracción de nombres (6 fases) y documentos (DNI, CUIL, CUIT, CUIF, Ma
 """
 import re
 import os
-from typing import List, Dict, Optional, Tuple, Any
 import spacy
+from typing import List, Dict, Optional, Tuple, Any
+from funcs.nlp_extractors.constantes import PALABRAS_FILTRO_NOMBRES, ANCLAS_CONTEXTUALES
+from funcs.nlp_extractors.constantes import limpiar_bordes_nombre
+
+from funcs.normalizacion.normalizar_y_extraer_texto_pdf import (
+    normalizacion_avanzada_pdf
+)
+from funcs.nlp_extractors.constantes import PATRONES_DOCUMENTOS, STOP_WORDS, PALABRAS_FILTRO_NOMBRES
+from funcs.nlp_extractors.validadores_entidades import (
+    validar_dni, validar_cuil, validar_cuit, 
+    validar_cuif, validar_matricula, validar_cbu
+)
+from funcs.nlp_extractors.contextual_anchor_rules import ContextualAnchorMatcher
+
 # Visualización movida a un módulo separado (import opcional)
 try:
     from funcs.nlp_extractors.visualization_displacy import (
@@ -25,16 +38,6 @@ except Exception:
         return False
 
     _VIS_DISPONIBLE = False
-
-from funcs.normalizacion.normalizar_y_extraer_texto_pdf import (
-    normalizacion_avanzada_pdf
-)
-from funcs.nlp_extractors.constantes import PATRONES_DOCUMENTOS, STOP_WORDS, PALABRAS_FILTRO_NOMBRES
-from funcs.nlp_extractors.validadores_entidades import (
-    validar_dni, validar_cuil, validar_cuit, 
-    validar_cuif, validar_matricula, validar_cbu
-)
-from funcs.nlp_extractors.contextual_anchor_rules import ContextualAnchorMatcher
 
 
 # Patrones regex precompilados para extracción de nombres
@@ -646,7 +649,6 @@ def _limpiar_anclas_de_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, 
     Returns:
         Lista con nombres limpios (sin anclas contextuales)
     """
-    from funcs.nlp_extractors.constantes import ANCLAS_CONTEXTUALES
     
     nombres_limpios = []
     
@@ -707,7 +709,6 @@ def _limpiar_bordes_de_nombres(nombres: List[Dict[str, Any]]) -> List[Dict[str, 
     Returns:
         Lista con nombres con bordes limpios
     """
-    from funcs.nlp_extractors.constantes import limpiar_bordes_nombre
     
     nombres_limpios = []
     
@@ -751,7 +752,6 @@ def _es_nombre_valido_sin_palabras_prohibidas(nombre: str) -> bool:
     Returns:
         True si el nombre NO contiene palabras prohibidas, False en caso contrario
     """
-    from funcs.nlp_extractors.constantes import PALABRAS_FILTRO_NOMBRES
     
     tokens = set(nombre.lower().split())
     # Si tiene intersección con palabras filtro, es inválido

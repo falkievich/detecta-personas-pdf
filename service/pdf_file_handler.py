@@ -14,6 +14,8 @@ from fastapi import UploadFile, HTTPException
 
 from funcs.comparar_json_pdf import comparar_valores_json_pdf
 from funcs.detectar_personas_pdf import detectar_personas_dni_matricula
+from funcs.detectar_identificadores_huerfanos import extraer_identificadores_huerfanos
+from funcs.normalizacion.normalizar_y_extraer_texto_pdf import normalizacion_avanzada_pdf
 from service.file_validators import validar_archivo_completo
 
 
@@ -234,8 +236,9 @@ async def procesar_pdf_y_comparar(
     2. Guarda archivos temporales (con validación completa)
     3. Si es PDF: Verifica que no esté escaneado
     4. Detecta personas con DNI/matrícula en el PDF o TXT
-    5. Si se proporcionó data_file, compara los datos
-    6. Limpia archivos temporales
+    5. Detecta identificadores huérfanos (sin persona) e inválidos (CUIL/CUIT con dígito verificador incorrecto)
+    6. Si se proporcionó data_file, compara los datos
+    7. Limpia archivos temporales
     
     Args:
         pdf_file_main: Archivo PDF principal a procesar (opcional, mutuamente excluyente con txt_file_main)
@@ -246,7 +249,9 @@ async def procesar_pdf_y_comparar(
         Diccionario con los resultados del procesamiento:
         - comparison_performed: bool indicando si se realizó comparación
         - comparison_result: resultado de la comparación (si aplica)
-        - personas_identificadas_pdf: lista de personas detectadas
+        - personas_identificadas_pdf: lista de personas detectadas con sus identificadores
+        - identificadores_huerfanos: DNI, CUIL, CUIT sin persona asociada
+        - identificadores_invalidos: CUIL, CUIT con dígito verificador incorrecto
         
     Raises:
         HTTPException: Si hay errores en el procesamiento
@@ -278,16 +283,30 @@ async def procesar_pdf_y_comparar(
         # 4. Detectar personas con DNI o matrícula (siempre se ejecuta)
         if tmp_pdf_path:
             personas_detectadas = detectar_personas_dni_matricula(path_pdf=tmp_pdf_path)
+            # Obtener texto normalizado para búsqueda de huérfanos
+            texto_normalizado = normalizacion_avanzada_pdf(path_pdf=tmp_pdf_path)
         else:
             # Leer el contenido del archivo TXT
             with open(tmp_txt_path, 'r', encoding='utf-8') as f:
                 txt_content = f.read()
             personas_detectadas = detectar_personas_dni_matricula(raw_text=txt_content)
+            # Obtener texto normalizado para búsqueda de huérfanos
+            texto_normalizado = normalizacion_avanzada_pdf(raw_text=txt_content)
         
         result["personas_identificadas_pdf"] = personas_detectadas
+        
+        # 5. Detectar identificadores huérfanos e inválidos (nueva funcionalidad)
+        identificadores_extra = extraer_identificadores_huerfanos(
+            texto=texto_normalizado,
+            personas_identificadas=personas_detectadas
+        )
+        
+        # Agregar identificadores huérfanos e inválidos al resultado
+        result["identificadores_huerfanos"] = identificadores_extra["identificadores_huerfanos"]
+        result["identificadores_invalidos"] = identificadores_extra["identificadores_invalidos"]
         
         return result
         
     finally:
-        # 5. Limpiar archivos temporales
+        # 6. Limpiar archivos temporales
         limpiar_archivos_temporales(tmp_pdf_path, tmp_data_path, tmp_txt_path)
