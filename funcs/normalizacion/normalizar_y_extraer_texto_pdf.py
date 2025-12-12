@@ -42,11 +42,29 @@ def extraer_texto_crudo_pdf(path_pdf: str) -> str:
 
 
 # Extración de texto de un PDF + normalización simple
-def normalizacion_simple_pdf(path_pdf='ley.pdf'):
-    texto = ''
-    with fitz.open(path_pdf) as doc:
-        for pagina in doc:
-            texto += pagina.get_text()
+def normalizacion_simple_pdf(path_pdf: str = None, raw_text: str = None):
+    """
+    Extrae y normaliza texto de un PDF o de un texto plano proporcionado.
+    
+    Args:
+        path_pdf: Ruta al archivo PDF (opcional si se proporciona raw_text)
+        raw_text: Texto plano directo (opcional si se proporciona path_pdf)
+    
+    Returns:
+        Texto normalizado
+    
+    Raises:
+        ValueError: Si no se proporciona ni path_pdf ni raw_text
+    """
+    if raw_text is not None:
+        texto = raw_text
+    elif path_pdf:
+        texto = ''
+        with fitz.open(path_pdf) as doc:
+            for pagina in doc:
+                texto += pagina.get_text()
+    else:
+        raise ValueError("Debe proporcionarse 'path_pdf' o 'raw_text'")
 
     # --- Normalización de símbolos de viñetas (solo símbolos) ---
     # Homogeneiza formas Unicode para capturar bullets "raros" provenientes de Word/PDF

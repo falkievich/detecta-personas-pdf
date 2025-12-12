@@ -14,17 +14,19 @@ from funcs.detectar_personas_pdf import detectar_personas_dni_matricula
 router = APIRouter(tags=["Analizador PDF — Detección de personas y comparación de datos"])
 
 # ---------------------------------------------------------- Post - Cargar un archivo JSON y un PDF para realizar la comparación de valores
-@router.post("/upload_files", summary=("Extrae personas de PDF y compara con datos opcionales"))
+@router.post("/upload_files", summary=("Extrae personas de PDF o TXT y compara con datos opcionales"))
 async def compare(
-    data_file: UploadFile | str | None = File(None, description="Archivo opcional (.json o .txt) con datos para comparar. Si se omite, solo se extraen personas del PDF."),
-    pdf_file: UploadFile = File(..., description="Archivo PDF a analizar (obligatorio).")
+    data_file: UploadFile | str | None = File(None, description="Archivo opcional (.json o .txt) con datos para comparar. Si se omite, solo se extraen personas."),
+    pdf_file_main: UploadFile | None = File(None, description="Archivo PDF principal a analizar (requerido si no se proporciona txt_file_main)."),
+    txt_file_main: UploadFile | None = File(None, description="Archivo TXT principal a analizar (alternativa a pdf_file_main).")
 ):
     """
-    Recibe un PDF y, opcionalmente, un archivo de datos (.json o .txt).
+    Recibe un PDF o TXT y, opcionalmente, un archivo de datos (.json o .txt).
 
     El flujo incluye:
+      - Validación de que se proporcione exactamente uno de: pdf_file_main o txt_file_main.
       - Validación y guardado temporal de los ficheros.
-      - Extracción de nombres e identificadores del PDF (DNI, CUIL, CUIT, Matrícula).
+      - Extracción de nombres e identificadores (DNI, CUIL, CUIT, Matrícula).
       - Si se proporciona `data_file`, realizará una comparación entre los datos extraídos y los datos entregados.
       - Devuelve un JSON estructurado con los resultados de la extracción y, si aplica, la comparación.
     """
@@ -37,7 +39,23 @@ async def compare(
             # Si por alguna razón se recibe otra cadena, ignorarla y tratar como None
             data_file = None
 
-    result = await procesar_pdf_y_comparar(pdf_file, data_file)
+    # Validar que se proporcione exactamente uno de pdf_file_main o txt_file_main
+    pdf_provided = pdf_file_main is not None and getattr(pdf_file_main, "filename", None)
+    txt_provided = txt_file_main is not None and getattr(txt_file_main, "filename", None)
+    
+    if not pdf_provided and not txt_provided:
+        raise HTTPException(
+            status_code=400,
+            detail="Debe proporcionar un archivo PDF (pdf_file_main) o un archivo TXT (txt_file_main)."
+        )
+    
+    if pdf_provided and txt_provided:
+        raise HTTPException(
+            status_code=400,
+            detail="Solo debe proporcionar uno de: pdf_file_main o txt_file_main, no ambos."
+        )
+
+    result = await procesar_pdf_y_comparar(pdf_file_main, data_file, txt_file_main)
     return JSONResponse(result)
 
 # ---------------------------------------------------------- Post - Detectar Nombre+Dni o Nombre+Matrícula 

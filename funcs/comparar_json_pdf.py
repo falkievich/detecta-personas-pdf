@@ -15,13 +15,36 @@ from funcs.normalizacion.normalizacion_txt_json import normalizar_para_comparaci
 # Acepta números de 1+ dígitos, opcionalmente con separadores de miles/puntos/guiones
 NUM_REGEX = re.compile(r"\b\d+(?:[.\-]\d+)*\b")
 
-def comparar_valores_json_pdf(json_path: str, pdf_path: str):
+def comparar_valores_json_pdf(json_path: str, source_path: str):
+    """
+    Compara valores de un archivo JSON con el contenido de un PDF o TXT.
+    
+    Args:
+        json_path: Ruta al archivo JSON o TXT con datos de referencia
+        source_path: Ruta al archivo PDF o TXT a comparar
+    
+    Returns:
+        Diccionario con las comparaciones agrupadas por nivel de similitud
+    """
     json_data = extraer_valores_txt(json_path)
     if not json_data:
         return {"exacta": [], "alta": [], "media": [], "baja": []}
 
-    # Extraer texto original del PDF (para mostrar)
-    texto_pdf_original = normalizacion_simple_pdf(pdf_path) # Eliminar en UN futuro
+    # Detectar si el archivo fuente es TXT o PDF por su extensión
+    import os
+    ext = os.path.splitext(source_path)[1].lower()
+    
+    if ext == '.txt':
+        # Leer el contenido del archivo TXT directamente
+        with open(source_path, 'r', encoding='utf-8') as f:
+            texto_pdf_original = f.read()
+        # Aplicar normalización simple al texto
+        texto_pdf_original = texto_pdf_original.replace('\n', ' ').replace('\r', ' ')
+        texto_pdf_original = re.sub(r'\s+', ' ', texto_pdf_original).strip()
+    else:
+        # Extraer texto original del PDF (para mostrar)
+        texto_pdf_original = normalizacion_simple_pdf(path_pdf=source_path)
+    
     # Normalizar para comparación (sin separadores en números)
     texto_pdf_comparacion = normalizar_para_comparacion(texto_pdf_original)
     
