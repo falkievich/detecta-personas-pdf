@@ -68,11 +68,19 @@ async def procesar_extraccion_desde_pdf(
             path_pdf=tmp_pdf.name
         )
         
+        # Validar identificadores inválidos si se solicitan CUIL o CUIT
+        identificadores_invalidos = None
+        if 'cuil' in entities or 'cuit' in entities:
+            # Obtener texto normalizado para búsqueda de inválidos
+            texto_normalizado = normalizacion_avanzada_pdf(path_pdf=tmp_pdf.name)
+            identificadores_invalidos = validar_cuil_cuit_en_texto(texto_normalizado)
+        
         # Construir respuesta estructurada
         return _construir_respuesta(
             fuente=pdf_file.filename,
             entities=entities,
-            resultado=resultado
+            resultado=resultado,
+            identificadores_invalidos=identificadores_invalidos
         )
         
     except HTTPException:

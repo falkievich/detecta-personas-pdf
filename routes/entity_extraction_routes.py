@@ -18,8 +18,10 @@ router = APIRouter(tags=["Extractor de Entidades Específicas"])
 @router.post("/extract_entities_from_pdf", summary="Extrae entidades específicas de un PDF",
     description=(
         "Analiza un archivo PDF y extrae únicamente las entidades solicitadas por el usuario. "
-        "Entidades disponibles: nombre, dni, matricula, cuif, cuit, cuil y cbu."
-        "Puedes solicitar una o múltiples entidades."
+        "Entidades disponibles: nombre, dni, matricula, cuif, cuit, cuil y cbu. "
+        "Puedes solicitar una o múltiples entidades. "
+        "Si solicitas CUIL o CUIT, también se validarán automáticamente los dígitos verificadores "
+        "y se reportarán los identificadores inválidos."
     )
 )
 async def extract_entities_from_pdf(
@@ -32,6 +34,10 @@ async def extract_entities_from_pdf(
 ):
     """
     Extrae entidades específicas de un PDF según lo solicitado por el usuario.
+    
+    Si se solicitan CUIL o CUIT, también se validarán automáticamente los dígitos 
+    verificadores y se incluirá un campo adicional 'identificadores_invalidos' en 
+    la respuesta con los CUIL/CUIT que tengan errores.
     
     Args:
         pdf_file: Archivo PDF a analizar
