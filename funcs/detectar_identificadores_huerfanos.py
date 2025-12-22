@@ -97,6 +97,57 @@ def extraer_identificadores_huerfanos(
     }
 
 
+def validar_cuil_cuit_en_texto(texto: str) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Valida todos los CUIL y CUIT en el texto y retorna solo los inválidos.
+    
+    Esta función es independiente y no requiere personas identificadas.
+    Útil para endpoints que solo necesitan detectar identificadores con errores.
+    
+    Args:
+        texto: Texto normalizado donde buscar
+        
+    Returns:
+        Diccionario con:
+        - cuil: Lista de CUIL con dígito verificador incorrecto
+        - cuit: Lista de CUIT con dígito verificador incorrecto
+        
+        Cada identificador incluye:
+        - numero: El número del identificador
+        - contexto: Texto alrededor
+        - razon: "Dígito verificador incorrecto"
+    """
+    # Buscar todos los CUIL y CUIT en el texto
+    todos_cuil = _buscar_cuil_en_texto(texto)
+    todos_cuit = _buscar_cuit_en_texto(texto)
+    
+    # Filtrar solo los inválidos
+    cuil_invalidos = [
+        {
+            'numero': doc['numero'],
+            'contexto': doc['contexto'],
+            'razon': 'Dígito verificador incorrecto'
+        }
+        for doc in todos_cuil
+        if not doc['valido']
+    ]
+    
+    cuit_invalidos = [
+        {
+            'numero': doc['numero'],
+            'contexto': doc['contexto'],
+            'razon': 'Dígito verificador incorrecto'
+        }
+        for doc in todos_cuit
+        if not doc['valido']
+    ]
+    
+    return {
+        'cuil': cuil_invalidos,
+        'cuit': cuit_invalidos
+    }
+
+
 def _extraer_identificadores_asociados(personas: List[str]) -> Dict[str, Set[str]]:
     """
     Extrae todos los números de identificadores que YA están asociados a personas.

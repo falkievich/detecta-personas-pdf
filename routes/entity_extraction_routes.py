@@ -53,7 +53,9 @@ async def extract_entities_from_pdf(
     description=(
         "Analiza texto plano o un archivo .txt/.json y extrae únicamente las entidades solicitadas. "
         "Entidades disponibles: nombre, dni, matricula, cuif, cuit, cuil, cbu. "
-        "Puedes proporcionar el texto directamente o subir un archivo, pero NO ambos a la vez."
+        "Puedes proporcionar el texto directamente o subir un archivo, pero NO ambos a la vez. "
+        "Si solicitas CUIL o CUIT, también se validarán automáticamente los dígitos verificadores "
+        "y se reportarán los identificadores inválidos."
     )
 )
 async def extract_entities_from_text(
@@ -67,6 +69,10 @@ async def extract_entities_from_text(
 ):
     """
     Extrae entidades específicas desde texto plano o archivo según lo solicitado.
+    
+    Si se solicitan CUIL o CUIT, también se validarán automáticamente los dígitos 
+    verificadores y se incluirá un campo adicional 'identificadores_invalidos' en 
+    la respuesta con los CUIL/CUIT que tengan errores.
     
     Args:
         text_file: Archivo .txt o .json con el texto (opcional)

@@ -15,6 +15,8 @@ from funcs.nlp_extractors.extraer_entidades_especificas_spacy import (
     extraer_entidades_especificas,
     validar_entidades_solicitadas
 )
+from funcs.detectar_identificadores_huerfanos import validar_cuil_cuit_en_texto
+from funcs.normalizacion.normalizar_y_extraer_texto_pdf import normalizacion_avanzada_pdf
 
 
 async def procesar_extraccion_desde_pdf(
@@ -149,11 +151,19 @@ async def procesar_extraccion_desde_texto(
             raw_text=texto_a_analizar
         )
         
+        # Validar identificadores inválidos si se solicitan CUIL o CUIT
+        identificadores_invalidos = None
+        if 'cuil' in entities or 'cuit' in entities:
+            # Obtener texto normalizado para búsqueda de inválidos
+            texto_normalizado = normalizacion_avanzada_pdf(raw_text=texto_a_analizar)
+            identificadores_invalidos = validar_cuil_cuit_en_texto(texto_normalizado)
+        
         # Construir respuesta estructurada
         return _construir_respuesta(
             fuente=nombre_fuente,
             entities=entities,
-            resultado=resultado
+            resultado=resultado,
+            identificadores_invalidos=identificadores_invalidos
         )
         
     except HTTPException:
@@ -222,7 +232,8 @@ async def _extraer_texto_de_fuente(
 def _construir_respuesta(
     fuente: str,
     entities: List[str],
-    resultado: Dict
+    resultado: Dict,
+    identificadores_invalidos: Optional[Dict] = None
 ) -> Dict:
     """
     Construye la respuesta estructurada con metadatos y resumen.
@@ -231,6 +242,7 @@ def _construir_respuesta(
         fuente: Nombre del archivo o fuente del texto
         entities: Lista de entidades solicitadas
         resultado: Resultado de la extracción
+        identificadores_invalidos: Diccionario con CUIL/CUIT inválidos (opcional)
         
     Returns:
         Diccionario con respuesta estructurada
@@ -240,6 +252,10 @@ def _construir_respuesta(
         "entidades_solicitadas": entities,
         "resultados": resultado,
     }
+    
+    # Agregar identificadores inválidos si existen
+    if identificadores_invalidos:
+        response['identificadores_invalidos'] = identificadores_invalidos
     
     # Resumen: contar solo listas de entidades
     resumen = {}
